@@ -45,8 +45,10 @@
   };
 
   const stars = (p) => `<span class="stars" aria-label="${h(PRIO[p] || '')}">${[1, 2, 3].map((i) => `<span class="${i <= p ? '' : 'off'}">${I.s}</span>`).join('')}</span>`;
-  const avatar = (m, size = 64, badge = '') =>
-    `<span class="avatar" style="--s:${size}px;--c:var(--m${(m && m.color) || 0})" aria-hidden="true">${h(initial(m && m.name))}${badge ? `<span class="badge">${h(badge)}</span>` : ''}</span>`;
+  const avatar = (m, size = 64, badge = '') => {
+    const photo = m && typeof m.photo === 'string' && m.photo.startsWith('data:image/') ? m.photo : null;
+    return `<span class="avatar${photo ? ' has-photo' : ''}" style="--s:${size}px;--c:var(--m${(m && m.color) || 0})" aria-hidden="true">${photo ? `<img src="${h(photo)}" alt="">` : h(initial(m && m.name))}${badge ? `<span class="badge">${h(badge)}</span>` : ''}</span>`;
+  };
   const imgHtml = (it, color = 1) => it.image
     ? `<img src="${h(it.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" ${it.image.startsWith('data:') ? 'class="cover"' : ''} data-i="${h(initial(it.title))}" onerror="var d=document.createElement('div');d.className='ph';d.textContent=this.dataset.i;this.replaceWith(d)">`
     : `<div class="ph" style="--c:var(--m${color})">${h(initial(it.title))}</div>`;
@@ -100,6 +102,7 @@
     save: (t, item) => rpc('rdc_save_item', { p_token: t, p_item: item }),
     remove: (t, id) => rpc('rdc_delete_item', { p_token: t, p_id: id }),
     reserve: (t, id, on) => rpc('rdc_reserve', { p_token: t, p_item: id, p_on: on }),
+    setPhoto: (t, photo) => rpc('rdc_set_photo', { p_token: t, p_photo: photo }),
   };
 
   // ---------------------------------------------------------------- backend demo (mismo contrato)
@@ -134,7 +137,7 @@
     const fail = (c) => Promise.reject(new ApiError(c));
     const me = (t) => db.members.find((m) => m.token === t);
     const fam = (f) => String(f || '').trim().toLowerCase() === 'linares';
-    const pub = (m) => ({ id: m.id, name: m.name, color: m.color });
+    const pub = (m) => ({ id: m.id, name: m.name, color: m.color, photo: m.photo || null });
     const strip = ({ id, owner_id, title, url, image, price, category, priority, notes, created_at }) =>
       ({ id, owner_id, title, url, image, price, category, priority, notes, created_at });
     const sort = (a, b) => (b.priority - a.priority) || (b.created_at > a.created_at ? 1 : -1);
@@ -179,7 +182,7 @@
         const u = me(t); if (!u) return fail('sesion');
         const list = db.items.filter((i) => db.reservations[i.id] === u.id).map((i) => {
           const o = db.members.find((m) => m.id === i.owner_id) || {};
-          return { ...strip(i), owner_name: o.name, owner_color: o.color, reserved: true, reserved_by_me: true };
+          return { ...strip(i), owner_name: o.name, owner_color: o.color, owner_photo: o.photo || null, reserved: true, reserved_by_me: true };
         });
         return wait({ items: list });
       },
@@ -215,6 +218,12 @@
           db.reservations[id] = u.id;
         } else if (db.reservations[id] === u.id) delete db.reservations[id];
         save();
+        return wait({ ok: true });
+      },
+      setPhoto(t, photo) {
+        const u = me(t); if (!u) return fail('sesion');
+        u.photo = photo || null;
+        try { save(); } catch { return fail('imagen'); }
         return wait({ ok: true });
       },
       reset() { db = seed(); save(); },
@@ -337,6 +346,25 @@
         x.drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(url);
         resolve(c.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+      img.src = url;
+    });
+  }
+
+  // foto de perfil: recorte cuadrado centrado de 256px
+  function compressAvatar(blob) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const side = Math.min(img.width, img.height), out = 256;
+        const c = document.createElement('canvas'); c.width = c.height = out;
+        const x = c.getContext('2d');
+        x.fillStyle = '#fff'; x.fillRect(0, 0, out, out);
+        x.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out, out);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.82));
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
       img.src = url;
@@ -469,7 +497,7 @@
   }
 
   function startSession(r) {
-    S.session = { token: r.token, id: r.id, name: r.name, color: r.color };
+    S.session = { token: r.token, id: r.id, name: r.name, color: r.color, photo: r.photo || null };
     ls.set(K.session, S.session);
     S.auth = { step: 'who', members: [], pick: null, error: '' };
     window.scrollTo({ top: 0 });
@@ -485,6 +513,16 @@
     if (d === 0) return '<b>¡Hoy vienen los Reyes!</b>';
     if (d === 1) return 'Los Reyes llegan <b>mañana</b> por la noche';
     return `Faltan <b class="tnum">${d} días</b> para el 6 de enero`;
+  }
+
+  // mantiene la sesión guardada al día (nombre, color y foto pueden cambiar desde otro móvil)
+  function syncMe(m) {
+    if (!m || !S.session) return;
+    const photo = m.photo || null;
+    if (S.session.photo !== photo || S.session.name !== m.name) {
+      Object.assign(S.session, { name: m.name, color: m.color, photo });
+      ls.set(K.session, S.session);
+    }
   }
 
   async function renderHome() {
@@ -518,7 +556,11 @@
         <button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>`;
     };
     paint();
-    try { S.home = await api.home(me.token); if (route().view === 'home') paint(); } catch (e) { handleErr(e); }
+    try {
+      S.home = await api.home(me.token);
+      syncMe(S.home.me);
+      if (route().view === 'home') paint();
+    } catch (e) { handleErr(e); }
   }
 
   // ---------- lista de una persona
@@ -600,7 +642,7 @@
       const items = S.gifts;
       const total = items ? items.reduce((s, i) => s + (Number(i.price) || 0), 0) : 0;
       const groups = new Map();
-      (items || []).forEach((i) => { if (!groups.has(i.owner_id)) groups.set(i.owner_id, { name: i.owner_name, color: i.owner_color, items: [] }); groups.get(i.owner_id).items.push(i); });
+      (items || []).forEach((i) => { if (!groups.has(i.owner_id)) groups.set(i.owner_id, { name: i.owner_name, color: i.owner_color, photo: i.owner_photo, items: [] }); groups.get(i.owner_id).items.push(i); });
       app.innerHTML = `
         <header class="topbar"><button class="icon-btn" data-act="home" aria-label="Volver al inicio">${I.back}</button><span class="grow"></span></header>
         <div class="list-head"><div class="grow"><p class="eyebrow">Tus reservas</p><h1 class="display">Lo que regalo yo</h1></div></div>
@@ -779,8 +821,17 @@
   // ---------------------------------------------------------------- menú
   function openMenu() {
     const theme = ls.get(K.theme) || 'system';
+    const hasPhoto = !!S.session.photo;
     openSheet(`
       ${sheetHead('Sesión', S.session.name)}
+      <div class="profile-photo">
+        <button type="button" class="avatar-edit" data-act="pick-avatar" aria-label="${hasPhoto ? 'Cambiar' : 'Poner'} foto de perfil">${avatar(S.session, 96)}<span class="avatar-cam">${I.image}</span></button>
+        <div class="stack" style="gap:8px">
+          <button class="btn btn-ghost btn-sm" data-act="pick-avatar">${hasPhoto ? 'Cambiar foto' : 'Poner foto de perfil'}</button>
+          ${hasPhoto ? '<button class="btn btn-ghost btn-sm" data-act="clear-avatar">Quitar foto</button>' : ''}
+        </div>
+        <input type="file" id="f-avatar" accept="image/*" hidden>
+      </div>
       <div class="menu-list">
         <button class="btn btn-ghost btn-block" data-act="theme">Tema: ${{ system: 'automático', light: 'claro', dark: 'oscuro' }[theme]}</button>
         ${DEMO ? '<button class="btn btn-ghost btn-block" data-act="demo-reset">Restablecer datos de ejemplo</button>' : ''}
@@ -869,6 +920,8 @@
         } catch { toast('No he podido pegar. Prueba con «Elegir de mis fotos».'); }
         break;
       case 'pick-file': $('#f-file').click(); break;
+      case 'pick-avatar': $('#f-avatar').click(); break;
+      case 'clear-avatar': savePhoto(null); break;
       case 'clear-img': F.image = null; paintImage(); break;
     }
   });
@@ -900,7 +953,21 @@
 
   document.addEventListener('change', (e) => {
     if (e.target.id === 'f-file' && e.target.files[0]) { setImageBlob(e.target.files[0]); e.target.value = ''; }
+    if (e.target.id === 'f-avatar' && e.target.files[0]) {
+      const file = e.target.files[0]; e.target.value = '';
+      compressAvatar(file).then(savePhoto, () => toast('No he podido leer esa imagen.'));
+    }
   });
+
+  async function savePhoto(photo) {
+    try {
+      await api.setPhoto(S.session.token, photo);
+      S.session.photo = photo; ls.set(K.session, S.session);
+      S.home = null; S.gifts = null;
+      toast(photo ? 'Foto de perfil guardada' : 'Foto quitada');
+      openMenu(); render();
+    } catch (err) { handleErr(err); }
+  }
 
   document.addEventListener('submit', async (e) => {
     e.preventDefault();
