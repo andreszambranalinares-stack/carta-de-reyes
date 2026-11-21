@@ -42,12 +42,16 @@
     image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>',
     eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 6.1A10 10 0 0112 6c5 0 9 6 9 6a16 16 0 01-3 3.5M6.6 6.6C4.4 8 3 12 3 12s4 6 9 6a9 9 0 004.4-1.1M9.9 9.9a3 3 0 004.2 4.2"/></svg>',
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+    alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/></svg>',
+    down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+    checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></svg>',
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 001-1V6a1 1 0 00-1-1z"/><path d="M17 9l-5 6M12 9l5 6"/></svg>',
   };
 
   const stars = (p) => `<span class="stars" aria-label="${h(PRIO[p] || '')}">${[1, 2, 3].map((i) => `<span class="${i <= p ? '' : 'off'}">${I.s}</span>`).join('')}</span>`;
-  const avatar = (m, size = 64, badge = '') => {
+  const avatar = (m, size = 64, badge = '', ring = false) => {
     const photo = m && typeof m.photo === 'string' && m.photo.startsWith('data:image/') ? m.photo : null;
-    return `<span class="avatar${photo ? ' has-photo' : ''}" style="--s:${size}px;--c:var(--m${(m && m.color) || 0})" aria-hidden="true">${photo ? `<img src="${h(photo)}" alt="">` : h(initial(m && m.name))}${badge ? `<span class="badge">${h(badge)}</span>` : ''}</span>`;
+    return `<span class="avatar${photo ? ' has-photo' : ''}${ring ? ' ring' : ''}" style="--s:${size}px;--c:var(--m${(m && m.color) || 0})" aria-hidden="true">${photo ? `<img src="${h(photo)}" alt="">` : h(initial(m && m.name))}${badge ? `<span class="badge">${h(badge)}</span>` : ''}</span>`;
   };
   const imgHtml = (it, color = 1) => it.image
     ? `<img src="${h(it.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" ${it.image.startsWith('data:') ? 'class="cover"' : ''} data-i="${h(initial(it.title))}" onerror="var d=document.createElement('div');d.className='ph';d.textContent=this.dataset.i;this.replaceWith(d)">`
@@ -414,73 +418,133 @@
     if (r.view === 'gifts') return renderGifts();
   }
 
-  const demoBanner = () => DEMO ? `<div class="demo-banner">${I.info}<span><b>Modo demo.</b> Datos de ejemplo guardados solo en este dispositivo. Cuando conectemos la base de datos, la familia verá lo mismo en cada móvil.</span></div>` : '';
+  const demoBanner = () => DEMO ? `<div class="demo-banner">${I.info}<span><b>Modo demo.</b> Datos de ejemplo guardados solo en este dispositivo.</span></div>` : '';
+
+  // ---------- piezas visuales compartidas
+  const STAR_IMG = '<img src="img/estrella.png" alt="" width="46" height="43">';
+  const KINGS = '<img class="kings" src="img/reyes.jpg" alt="" aria-hidden="true">';
+  const DUNES = '<svg class="dunes" viewBox="0 0 400 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 44 C70 18 150 22 220 40 S340 60 400 28 V70 H0Z" fill="#111b47"/><path d="M0 60 C90 42 170 48 250 58 S360 64 400 52 V70 H0Z" fill="#0a1230"/></svg>';
+  const brand = () => `<div class="brand">${STAR_IMG}<span class="display">Carta de Reyes</span></div>`;
+  const scene = (back, bigStar) => `
+    <div class="scene">${KINGS}
+      ${bigStar ? '<img class="big-star" src="img/estrella.png" alt="" aria-hidden="true">' : ''}
+      <div class="scene-head">${back ? `<button class="icon-btn plain" data-act="${back}" aria-label="Atrás">${I.back}</button>` : ''}${brand()}</div>
+      ${DUNES}
+    </div>`;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
   // ---------- acceso
+  const resetPins = () => { S.pin = { pin: '', pin2: '', active: 'pin' }; };
+  resetPins();
+
   function renderAuth() {
     const a = S.auth;
     if (S.family && a.step === 'code') a.step = 'who';
     let body = '';
     if (a.step === 'code') {
-      body = `
-        <form class="stack" data-form="code" novalidate>
-          <div class="field"><label for="f-code">Código de la familia</label>
-            <input class="input" id="f-code" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="El que os ha pasado Andrés" value="${h(S.family || '')}"></div>
-          <p class="error-msg">${h(a.error)}</p>
-          <button class="btn btn-gold btn-block" type="submit">Continuar</button>
-        </form>`;
+      body = `${scene(null)}
+        <div class="auth">
+          <div class="auth-title"><h1 class="display">Tu carta para los Reyes</h1>
+            <p>Cada uno escribe su carta. Los demás eligen qué regalar sin que nadie se entere.</p></div>
+          ${demoBanner()}
+          <form class="stack" data-form="code" novalidate>
+            <div class="field"><label for="f-code">Código de la familia</label>
+              <input class="input" id="f-code" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="El que te ha pasado la familia" value="${h(S.family || '')}"></div>
+            <p class="error-msg">${h(a.error)}</p>
+            <button class="btn btn-gold btn-block" type="submit">Continuar</button>
+          </form>
+        </div>`;
     } else if (a.step === 'who') {
       if (!a.members.length && !a.loading) loadAuthMembers();
-      body = `
-        <div class="stack">
-          <p class="eyebrow">¿Quién eres?</p>
-          ${a.loading ? '<div class="skeleton" style="height:110px"></div>' : `
+      body = `${scene(null)}
+        <div class="auth">
+          <div class="auth-title"><h1 class="display">¿Quién eres?</h1><p>Toca tu nombre para entrar</p></div>
+          ${demoBanner()}
+          ${a.loading ? '<div class="skeleton" style="height:120px"></div>' : `
           <div class="who-grid">
-            ${a.members.map((m) => `<button class="who" data-act="pick" data-id="${h(m.id)}">${avatar(m, 68)}<span>${h(m.name)}</span></button>`).join('')}
-            <button class="who" data-act="new"><span class="avatar" style="--s:68px;--c:var(--m0);border-style:dashed;font-family:var(--font-ui);font-size:30px" aria-hidden="true">+</span><span>Soy nuevo</span></button>
+            ${a.members.map((m) => `<button class="who" data-act="pick" data-id="${h(m.id)}">${avatar(m, 84, '', true)}<span>${h(m.name)}</span></button>`).join('')}
+            <button class="who" data-act="new"><span class="avatar" style="--s:84px;--c:var(--m0);border-style:dashed;font-family:var(--font-ui);font-size:34px;color:var(--gold)" aria-hidden="true">+</span><span>Soy nuevo</span></button>
           </div>`}
           <p class="error-msg">${h(a.error)}</p>
           <button class="link-btn" data-act="change-family">Cambiar código de familia</button>
         </div>`;
     } else if (a.step === 'pin') {
       const m = a.members.find((x) => x.id === a.pick) || {};
-      body = `
-        <form class="stack" data-form="login" novalidate>
-          <div class="row">${avatar(m, 52)}<div><p class="eyebrow">Hola de nuevo</p><div class="display" style="font-size:1.8rem">${h(m.name)}</div></div></div>
-          ${pinField('pin', 'Tu PIN')}
-          <p class="error-msg">${h(a.error)}</p>
+      body = `${scene('back-who', true)}
+        <form class="auth" data-form="login" novalidate>
+          <div class="auth-face">${avatar(m, 148, '', true)}<span class="name">${h(m.name)}</span></div>
+          <div class="auth-title"><h1 class="display">Hola de nuevo</h1><p>Introduce tu PIN para entrar</p></div>
+          ${pinGroup('pin', 'Tu PIN', false)}
           <button class="btn btn-gold btn-block" type="submit">Entrar</button>
-          <button class="link-btn" type="button" data-act="back-who">No soy ${h(m.name)}</button>
+          ${a.error ? `<p class="error-pill" role="alert">${I.alert}${h(a.error)}</p>` : ''}
+          ${keypad()}
         </form>`;
     } else if (a.step === 'new') {
-      body = `
-        <form class="stack" data-form="register" novalidate>
+      body = `${scene(a.members.length ? 'back-who' : null)}
+        <form class="auth" data-form="register" novalidate>
+          <div class="auth-title"><h1 class="display">Crea tu carta</h1><p>Solo tu nombre y un PIN de 4 números</p></div>
+          ${demoBanner()}
           <div class="field"><label for="f-name">Tu nombre</label>
-            <input class="input" id="f-name" name="name" maxlength="30" autocomplete="given-name" placeholder="Como te llama la familia"></div>
-          ${pinField('pin', 'Elige un PIN de 4 números')}
-          ${pinField('pin2', 'Repítelo')}
-          <p class="error-msg">${h(a.error)}</p>
+            <input class="input" id="f-name" name="name" maxlength="30" autocomplete="given-name" placeholder="Como te llama la familia" value="${h(a.name || '')}"></div>
+          ${pinGroup('pin', 'Elige un PIN de 4 números', true)}
+          ${pinGroup('pin2', 'Repítelo', true)}
+          ${a.error ? `<p class="error-pill" role="alert">${I.alert}${h(a.error)}</p>` : ''}
+          ${keypad()}
           <button class="btn btn-gold btn-block" type="submit">Crear mi carta</button>
-          <button class="link-btn" type="button" data-act="back-who">Ya tengo cuenta</button>
+          ${a.members.length ? '<button class="link-btn" type="button" data-act="back-who">Ya tengo cuenta</button>' : ''}
         </form>`;
     }
-    app.innerHTML = `
-      <section class="auth">
-        <div class="auth-hero">${I.star}<h1 class="display">Carta de Reyes</h1>
-          <p>Cada uno escribe su carta. Los demás eligen qué regalar sin que nadie se entere.</p></div>
-        ${demoBanner()}
-        ${body}
-      </section>`;
-    const first = $('#f-code') || $('#f-name') || $('#pin');
-    if (first && a.step !== 'who') setTimeout(() => first.focus(), 60);
+    app.innerHTML = body;
+    paintPins();
+    const first = $('#f-code') || ($('#f-name') && !$('#f-name').value ? $('#f-name') : null);
+    if (first) setTimeout(() => first.focus(), 60);
   }
 
-  const pinField = (id, label) => `
-    <div class="field"><span class="label" id="${id}-l">${h(label)}</span>
-      <div class="pin-wrap" data-pin="${id}">
-        <input class="pin-hidden" id="${id}" name="${id}" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-labelledby="${id}-l">
-        <div class="pin-boxes" aria-hidden="true"><span class="on"></span><span></span><span></span><span></span></div>
-      </div></div>`;
+  const pinGroup = (id, label, showLabel) => `
+    <div class="pin-group" data-pin="${id}">
+      ${showLabel ? `<span class="label">${h(label)}</span>` : ''}
+      <button type="button" class="pin-boxes" data-act="pin-focus" data-pin="${id}" aria-label="${h(label)}">
+        <span></span><span></span><span></span><span></span></button>
+    </div>`;
+
+  const keypad = () => `
+    <div class="keypad" role="group" aria-label="Teclado numérico">
+      ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button type="button" data-act="key" data-k="${n}">${n}</button>`).join('')}
+      <button type="button" class="k0" data-act="key" data-k="0">0</button>
+      <button type="button" data-act="key" data-k="del" aria-label="Borrar">${I.del}</button>
+    </div>`;
+
+  function paintPins() {
+    $$('.pin-group').forEach((g) => {
+      const id = g.dataset.pin, v = S.pin[id] || '';
+      g.classList.toggle('active', S.pin.active === id);
+      $$('.pin-boxes span', g).forEach((b, i) => { b.classList.toggle('filled', i < v.length); b.classList.toggle('on', i === Math.min(v.length, 3)); });
+      $('.pin-boxes', g).setAttribute('aria-label', `${v.length} de 4 números escritos`);
+    });
+  }
+
+  function pinPress(k) {
+    const step = S.auth.step;
+    if (step !== 'pin' && step !== 'new') return;
+    const id = step === 'pin' ? 'pin' : S.pin.active;
+    let v = S.pin[id] || '';
+    if (k === 'del') {
+      if (!v && id === 'pin2') { S.pin.active = 'pin'; paintPins(); return; }
+      v = v.slice(0, -1);
+    } else if (v.length < 4) v += k;
+    S.pin[id] = v;
+    if (v.length === 4) {
+      if (step === 'pin') { paintPins(); $('form[data-form="login"]').requestSubmit(); return; }
+      if (id === 'pin') S.pin.active = 'pin2';
+    }
+    paintPins();
+  }
+
+  function shakePins(id) {
+    const g = $(`.pin-group[data-pin="${id}"]`); if (!g) return;
+    g.classList.remove('shake'); void g.offsetWidth; g.classList.add('shake');
+    if (navigator.vibrate) try { navigator.vibrate(80); } catch { /* nada */ }
+  }
 
   async function loadAuthMembers() {
     S.auth.loading = true; renderAuth();
@@ -488,7 +552,7 @@
       const r = await api.members(S.family);
       S.auth.members = r.members || [];
       S.auth.error = '';
-      if (!S.auth.members.length) S.auth.step = 'new';
+      if (!S.auth.members.length) { S.auth.step = 'new'; resetPins(); }
     } catch (e) {
       if (e.code === 'familia') { ls.del(K.family); S.family = null; S.auth.step = 'code'; }
       S.auth.error = errText(e);
@@ -500,6 +564,7 @@
     S.session = { token: r.token, id: r.id, name: r.name, color: r.color, photo: r.photo || null };
     ls.set(K.session, S.session);
     S.auth = { step: 'who', members: [], pick: null, error: '' };
+    resetPins();
     window.scrollTo({ top: 0 });
     render();
   }
@@ -525,34 +590,38 @@
     }
   }
 
+  const topbar = (back) => `
+    <header class="topbar">
+      ${back ? `<button class="icon-btn plain" data-act="${back}" aria-label="Volver al inicio">${I.back}</button>` : ''}
+      <div class="grow">${brand()}</div>
+      <button class="me-btn" data-act="menu" aria-label="Tu perfil y ajustes">${avatar(S.session, 50, '', true)}${I.down}</button>
+    </header>`;
+
   async function renderHome() {
     const me = S.session;
     const paint = () => {
       const d = S.home;
       app.innerHTML = `
-        <header class="topbar">
-          <div class="brand grow">${I.star}<span class="display">Carta de Reyes</span></div>
-          <button class="icon-btn" data-act="menu" aria-label="Menú de ${h(me.name)}" style="padding:0;border:0;background:none">${avatar(me, 44)}</button>
-        </header>
+        ${topbar(null)}
         <p class="countdown">${countdown()}</p>
         ${demoBanner()}
-        <button class="me-card" data-act="open-list" data-id="${h(me.id)}">
-          ${avatar(me, 72)}
+        <button class="hero-card" data-act="open-list" data-id="${h(me.id)}">
+          ${KINGS}${avatar(me, 84, '', true)}
           <span class="grow"><span class="eyebrow">Tú</span><span class="display">Mi carta</span>
-            <span class="muted">${d ? (d.me.count ? `${d.me.count} ${d.me.count === 1 ? 'deseo' : 'deseos'}` : 'Aún vacía: añade tu primer deseo') : '…'}</span></span>
+            <span class="sub">${d ? (d.me.count ? plural(d.me.count, 'deseo', 'deseos') : 'Aún vacía: añade tu primer deseo') : '…'}</span></span>
           <span class="chev">${I.chev}</span>
         </button>
         <div class="section-head"><h2 class="display">La familia</h2></div>
         ${!d ? '<div class="family-grid">' + '<div class="skeleton" style="height:170px"></div>'.repeat(3) + '</div>'
           : d.members.length ? `<div class="family-grid">${d.members.map((m) => `
             <button class="member" data-act="open-list" data-id="${h(m.id)}">
-              ${avatar(m, 64, m.mine ? '✓' + m.mine : '')}
+              ${avatar(m, 68, m.mine ? '✓' + m.mine : '', true)}
               <span class="name">${h(m.name)}</span>
-              <span class="meta">${m.count ? `${m.count} ${m.count === 1 ? 'deseo' : 'deseos'}` : 'Sin deseos aún'}${m.mine ? ` · <b>regalas ${m.mine}</b>` : ''}</span>
+              <span class="meta">${m.count ? plural(m.count, 'deseo', 'deseos') : 'Sin deseos aún'}${m.mine ? `<br><b>regalas ${m.mine}</b>` : ''}</span>
             </button>`).join('')}</div>`
           : `<div class="empty"><span class="display">Aún estás solo</span><p>Pasa el enlace y el código <b>Linares</b> al resto de la familia para que creen su carta.</p></div>`}
-        ${d ? `<button class="gifts-card" data-act="gifts">${I.gift}<span class="grow"><strong>Lo que regalo yo</strong>
-          <span class="muted">${d.gifts ? `${d.gifts} ${d.gifts === 1 ? 'regalo apuntado' : 'regalos apuntados'}` : 'Todavía no has elegido ningún regalo'}</span></span><span class="chev" style="width:22px;color:var(--muted)">${I.chev}</span></button>` : ''}
+        ${d ? `<button class="wide-card" data-act="gifts">${I.gift}<span class="grow"><strong>Lo que regalo yo</strong>
+          <span class="muted">${d.gifts ? plural(d.gifts, 'regalo apuntado', 'regalos apuntados') : 'Todavía no has elegido ningún regalo'}</span></span><span class="chev">${I.chev}</span></button>` : ''}
         <button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>`;
     };
     paint();
@@ -576,10 +645,10 @@
     return [...map.entries()].sort((a, b) => (a[0] === 'Sin categoría') - (b[0] === 'Sin categoría') || b[1] - a[1]);
   };
 
-  function cardHtml(it, owner, opts = {}) {
+  function cardHtml(it, owner) {
     let tag = '';
     if (!owner.mine && it.reserved) {
-      tag = it.reserved_by_me ? `<span class="tag mine">${I.check}Lo regalas tú</span>` : `<span class="tag">${I.lock}Lo regala ${h(it.reserved_by || 'alguien')}</span>`;
+      tag = it.reserved_by_me ? `<span class="tag mine">${I.checkCircle}Lo regalas tú</span>` : `<span class="tag">${I.lock}Ya lo regala ${h(it.reserved_by || 'alguien')}</span>`;
     }
     return `
       <button class="card ${!owner.mine && it.reserved && !it.reserved_by_me ? 'taken' : ''}" data-act="item" data-id="${h(it.id)}" data-owner="${h(it.owner_id)}">
@@ -587,7 +656,6 @@
         <div class="img">${imgHtml(it, owner.color)}</div>
         <div class="body">
           <span class="title">${h(it.title)}</span>
-          ${opts.ownerName ? `<span class="owner">Para ${h(opts.ownerName)}</span>` : ''}
           <span class="foot"><span class="price">${h(eur(it.price))}</span>${stars(it.priority)}</span>
         </div>
       </button>`;
@@ -603,28 +671,25 @@
       if (cat !== 'all' && !cats.some(([c]) => c === cat)) cat = S.cat[ownerId] = 'all';
       const reservedCount = items && !owner.mine ? items.filter((i) => i.reserved_by_me).length : 0;
       let content;
-      if (!items) content = '<div class="grid">' + '<div class="skeleton" style="aspect-ratio:.78"></div>'.repeat(4) + '</div>';
+      if (!items) content = '<div class="grid">' + '<div class="skeleton" style="aspect-ratio:.8"></div>'.repeat(4) + '</div>';
       else if (!items.length) content = owner.mine
         ? `<div class="empty"><span class="display">Tu carta está en blanco</span><p>Pega el enlace de algo que te guste y la app sacará la foto y el precio sola.</p><button class="btn btn-gold" data-act="add">${I.plus}Añadir mi primer deseo</button></div>`
         : `<div class="empty"><span class="display">${h(owner.name)} aún no ha pedido nada</span><p>Vuelve en un rato. Los Reyes también necesitan pistas.</p></div>`;
-      else if (cat === 'all' && cats.length > 1) content = cats.map(([c, n]) => `
-          <section class="cat-block"><div class="cat-title"><h3>${h(c)}</h3><span>${n}</span></div>
-          <div class="grid">${items.filter((i) => (i.category || 'Sin categoría') === c).map((i) => cardHtml(i, owner)).join('')}</div></section>`).join('');
       else content = `<div class="grid">${items.filter((i) => cat === 'all' || (i.category || 'Sin categoría') === cat).map((i) => cardHtml(i, owner)).join('')}</div>`;
 
       app.innerHTML = `
-        <header class="topbar"><button class="icon-btn" data-act="home" aria-label="Volver al inicio">${I.back}</button><span class="grow"></span></header>
-        <div class="list-head">
-          ${avatar(owner, 64)}
-          <div class="grow"><p class="eyebrow">${owner.mine ? 'Tu carta' : 'La carta de'}</p><h1 class="display">${h(owner.mine ? 'Mi carta' : owner.name)}</h1>
-            <span class="muted">${items ? `${items.length} ${items.length === 1 ? 'deseo' : 'deseos'}${reservedCount ? ` · regalas ${reservedCount}` : ''}` : ''}</span></div>
+        ${topbar('home')}
+        <div class="hero-card">
+          ${KINGS}${avatar(owner, 92, '', true)}
+          <div class="grow"><h1 class="display">${owner.mine ? 'Mi carta' : `La carta de ${h(owner.name)}`}</h1>
+            <span class="sub">${items ? `${plural(items.length, 'deseo', 'deseos')}${reservedCount ? ` · regalas ${reservedCount}` : ''}` : '…'}</span></div>
         </div>
-        ${owner.mine && items && items.length ? `<p class="secret-note">${I.eyeOff}<span>Nunca verás qué ha reservado cada uno de tu carta. Así hay sorpresa.</span></p>` : ''}
-        ${items && items.length ? `<nav class="chips" aria-label="Categorías">
-          <button class="chip" aria-pressed="${cat === 'all'}" data-act="cat" data-cat="all">Todo <span class="n">${items.length}</span></button>
+        ${items && items.length ? `<nav class="chips" aria-label="Listas">
+          <button class="chip" aria-pressed="${cat === 'all'}" data-act="cat" data-cat="all">Todo</button>
           ${cats.map(([c, n]) => `<button class="chip" aria-pressed="${cat === c}" data-act="cat" data-cat="${h(c)}">${h(c)} <span class="n">${n}</span></button>`).join('')}
-        </nav>` : ''}
+        </nav>` : '<div style="height:16px"></div>'}
         ${content}
+        ${owner.mine && items && items.length ? `<p class="note-card">${I.info}<span>Nunca verás qué te han reservado.<span>Así hay sorpresa.</span></span></p>` : ''}
         ${owner.mine ? `<button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>` : ''}`;
     };
     paint();
@@ -644,13 +709,16 @@
       const groups = new Map();
       (items || []).forEach((i) => { if (!groups.has(i.owner_id)) groups.set(i.owner_id, { name: i.owner_name, color: i.owner_color, photo: i.owner_photo, items: [] }); groups.get(i.owner_id).items.push(i); });
       app.innerHTML = `
-        <header class="topbar"><button class="icon-btn" data-act="home" aria-label="Volver al inicio">${I.back}</button><span class="grow"></span></header>
-        <div class="list-head"><div class="grow"><p class="eyebrow">Tus reservas</p><h1 class="display">Lo que regalo yo</h1></div></div>
-        ${!items ? '<div class="skeleton" style="height:200px"></div>'
-          : !items.length ? `<div class="empty"><span class="display">Aún no has elegido nada</span><p>Entra en la carta de alguien, abre un deseo y pulsa «¡Lo regalo yo!».</p><button class="btn btn-ghost" data-act="home">Ver la familia</button></div>`
-          : `<div class="total-bar"><span class="muted">${items.length} ${items.length === 1 ? 'regalo' : 'regalos'}</span><b>${h(eur(total) || '—')}</b></div>
-            ${[...groups.entries()].map(([id, g]) => `<section class="gift-group">
-              <div class="gift-group-head">${avatar(g, 40)}<span class="display">Para ${h(g.name)}</span></div>
+        ${topbar('home')}
+        <div class="hero-card">${KINGS}
+          <div class="grow"><p class="eyebrow">Tus reservas</p><h1 class="display">Lo que regalo yo</h1>
+          <span class="sub">${items ? (items.length ? `${plural(items.length, 'regalo', 'regalos')} · ${h(eur(total) || '—')}` : 'Aún ninguno') : '…'}</span></div>
+        </div>
+        ${!items ? '<div class="skeleton" style="height:200px;margin-top:18px"></div>'
+          : !items.length ? `<div class="empty" style="margin-top:18px"><span class="display">Aún no has elegido nada</span><p>Entra en la carta de alguien, abre un deseo y pulsa «¡Lo regalo yo!».</p><button class="btn btn-ghost" data-act="home">Ver la familia</button></div>`
+          : `<div class="total-bar"><span class="muted">Total aproximado</span><b>${h(eur(total) || '—')}</b></div>
+            ${[...groups.entries()].map(([, g]) => `<section class="gift-group">
+              <div class="gift-group-head">${avatar(g, 44, '', true)}<span class="display">Para ${h(g.name)}</span></div>
               <div class="grid">${g.items.map((i) => cardHtml(i, { mine: false, color: g.color })).join('')}</div></section>`).join('')}`}`;
     };
     paint();
@@ -820,12 +888,11 @@
 
   // ---------------------------------------------------------------- menú
   function openMenu() {
-    const theme = ls.get(K.theme) || 'system';
     const hasPhoto = !!S.session.photo;
     openSheet(`
-      ${sheetHead('Sesión', S.session.name)}
+      ${sheetHead('Tu perfil', S.session.name)}
       <div class="profile-photo">
-        <button type="button" class="avatar-edit" data-act="pick-avatar" aria-label="${hasPhoto ? 'Cambiar' : 'Poner'} foto de perfil">${avatar(S.session, 96)}<span class="avatar-cam">${I.image}</span></button>
+        <button type="button" class="avatar-edit" data-act="pick-avatar" aria-label="${hasPhoto ? 'Cambiar' : 'Poner'} foto de perfil">${avatar(S.session, 104, '', true)}<span class="avatar-cam">${I.image}</span></button>
         <div class="stack" style="gap:8px">
           <button class="btn btn-ghost btn-sm" data-act="pick-avatar">${hasPhoto ? 'Cambiar foto' : 'Poner foto de perfil'}</button>
           ${hasPhoto ? '<button class="btn btn-ghost btn-sm" data-act="clear-avatar">Quitar foto</button>' : ''}
@@ -833,39 +900,27 @@
         <input type="file" id="f-avatar" accept="image/*" hidden>
       </div>
       <div class="menu-list">
-        <button class="btn btn-ghost btn-block" data-act="theme">Tema: ${{ system: 'automático', light: 'claro', dark: 'oscuro' }[theme]}</button>
         ${DEMO ? '<button class="btn btn-ghost btn-block" data-act="demo-reset">Restablecer datos de ejemplo</button>' : ''}
         <button class="btn btn-danger btn-block" data-act="logout">Cerrar sesión</button>
       </div>
       <p class="muted" style="font-size:.85rem;margin:16px 0 0">Para entrar en otro móvil necesitas el código de familia, tu nombre y tu PIN.</p>`, 'Menú');
   }
-  function applyTheme() {
-    const t = ls.get(K.theme) || 'system';
-    if (t === 'system') document.documentElement.removeAttribute('data-theme');
-    else document.documentElement.setAttribute('data-theme', t);
-  }
-
   // ---------------------------------------------------------------- eventos
   document.addEventListener('click', async (e) => {
-    const pinWrap = e.target.closest('.pin-wrap');
-    if (pinWrap) { $('input', pinWrap).focus(); }
     const el = e.target.closest('[data-act]');
     if (!el) return;
     const act = el.dataset.act;
     if (act === 'backdrop' && e.target !== el) return;
     const id = el.dataset.id;
     switch (act) {
-      case 'pick': S.auth.pick = id; S.auth.step = 'pin'; S.auth.error = ''; renderAuth(); break;
-      case 'new': S.auth.step = 'new'; S.auth.error = ''; renderAuth(); break;
-      case 'back-who': S.auth.step = 'who'; S.auth.error = ''; renderAuth(); break;
+      case 'pick': S.auth.pick = id; S.auth.step = 'pin'; S.auth.error = ''; resetPins(); renderAuth(); window.scrollTo({ top: 0 }); break;
+      case 'new': S.auth.step = 'new'; S.auth.error = ''; S.auth.name = ''; resetPins(); renderAuth(); break;
+      case 'back-who': S.auth.step = 'who'; S.auth.error = ''; resetPins(); renderAuth(); break;
+      case 'key': pinPress(el.dataset.k); break;
+      case 'pin-focus': if (S.auth.step === 'new') { S.pin.active = el.dataset.pin; paintPins(); } break;
       case 'change-family': ls.del(K.family); S.family = null; S.auth = { step: 'code', members: [], error: '' }; renderAuth(); break;
       case 'menu': openMenu(); break;
       case 'logout': logout(); break;
-      case 'theme': {
-        const order = ['system', 'light', 'dark'];
-        const next = order[(order.indexOf(ls.get(K.theme) || 'system') + 1) % 3];
-        ls.set(K.theme, next); applyTheme(); openMenu(); break;
-      }
       case 'demo-reset': demo.reset(); S.home = null; S.items = {}; S.gifts = null; closeSheet(); toast('Datos de ejemplo restablecidos'); logout(); break;
       case 'open-list': go(id === S.session.id ? 'mia' : 'lista-' + id); break;
       case 'home': go(''); break;
@@ -928,17 +983,7 @@
 
   document.addEventListener('input', (e) => {
     const t = e.target;
-    if (t.classList.contains('pin-hidden')) {
-      t.value = t.value.replace(/\D/g, '').slice(0, 4);
-      const boxes = $$('span', t.parentElement.querySelector('.pin-boxes'));
-      boxes.forEach((b, i) => { b.classList.toggle('filled', i < t.value.length); b.classList.toggle('on', i === Math.min(t.value.length, 3)); });
-      if (t.value.length === 4) {
-        const form = t.closest('form');
-        if (form.dataset.form === 'login') form.requestSubmit();
-        else if (t.id === 'pin') { const p2 = $('#pin2'); if (p2) p2.focus(); }
-      }
-      return;
-    }
+    if (t.id === 'f-name') { S.auth.name = t.value; return; }
     if (!F) return;
     if (t.id === 'f-url') {
       F.url = t.value.trim();
@@ -973,11 +1018,9 @@
     e.preventDefault();
     const form = e.target; const kind = form.dataset.form;
     const btn = $('[type="submit"]', form);
-    const showErr = (msg) => {
-      const p = $('.error-msg', form); if (p) p.textContent = msg;
-      const wrap = $('.pin-wrap', form);
-      if (wrap && kind !== 'item') { wrap.classList.remove('shake'); void wrap.offsetWidth; wrap.classList.add('shake'); }
-    };
+    const showErr = (msg) => { const p = $('.error-msg', form); if (p) p.textContent = msg; };
+    // errores del PIN: se repinta la pantalla con el aviso y se agita la casilla afectada
+    const pinErr = (msg, shake = 'pin') => { S.auth.error = msg; renderAuth(); shakePins(shake); };
     if (kind === 'code') {
       const code = $('#f-code').value.trim();
       if (!code) return showErr('Escribe el código de la familia.');
@@ -986,20 +1029,21 @@
       catch (err) { btn.disabled = false; showErr(errText(err)); }
     }
     if (kind === 'login') {
-      const pin = $('#pin').value;
-      if (pin.length !== 4) return showErr(ERR.pin_formato);
+      const pin = S.pin.pin;
+      if (pin.length !== 4) return pinErr(ERR.pin_formato);
       btn.disabled = true;
       try { startSession(await api.login(S.family, S.auth.pick, pin)); }
-      catch (err) { btn.disabled = false; $('#pin').value = ''; $('#pin').dispatchEvent(new Event('input', { bubbles: true })); showErr(errText(err)); }
+      catch (err) { resetPins(); pinErr(errText(err)); }
     }
     if (kind === 'register') {
-      const name = $('#f-name').value.trim(), pin = $('#pin').value, pin2 = $('#pin2').value;
-      if (!name) return showErr(ERR.nombre);
-      if (pin.length !== 4) return showErr(ERR.pin_formato);
-      if (pin !== pin2) { $('#pin2').value = ''; $('#pin2').dispatchEvent(new Event('input', { bubbles: true })); return showErr('Los dos PIN no coinciden.'); }
+      const name = $('#f-name').value.trim(), { pin, pin2 } = S.pin;
+      S.auth.name = name;
+      if (!name) { pinErr(ERR.nombre, ''); $('#f-name').focus(); return; }
+      if (pin.length !== 4) { S.pin.active = 'pin'; return pinErr(ERR.pin_formato, 'pin'); }
+      if (pin !== pin2) { S.pin.pin2 = ''; S.pin.active = 'pin2'; return pinErr('Los dos PIN no coinciden.', 'pin2'); }
       btn.disabled = true;
       try { startSession(await api.register(S.family, name, pin)); toast(`¡Bienvenido, ${name}!`); }
-      catch (err) { btn.disabled = false; showErr(errText(err)); }
+      catch (err) { pinErr(errText(err), ''); }
     }
     if (kind === 'item') {
       const title = $('#f-title').value.trim();
@@ -1019,13 +1063,20 @@
     }
   });
 
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetRoot.innerHTML) { closeSheet(); F = null; } });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sheetRoot.innerHTML) { closeSheet(); F = null; return; }
+    // en ordenador, el PIN también se puede escribir con el teclado físico
+    if (!S.session && (S.auth.step === 'pin' || S.auth.step === 'new') && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
+      if (/^\d$/.test(e.key)) { e.preventDefault(); pinPress(e.key); }
+      else if (e.key === 'Backspace') { e.preventDefault(); pinPress('del'); }
+    }
+  });
   window.addEventListener('hashchange', () => { closeSheet(); F = null; window.scrollTo({ top: 0 }); render(); });
   // al volver a la app (cambio de pestaña), refrescar datos para ver lo que han hecho los demás
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.session && !sheetRoot.innerHTML) { S.home = null; refreshCurrent(); } });
 
   function refreshCurrent() { render(); }
 
-  applyTheme();
+  try { localStorage.removeItem(K.theme); } catch { /* tema único */ }
   render();
 })();
