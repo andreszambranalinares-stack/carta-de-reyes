@@ -596,3 +596,38 @@ html { overscroll-behavior-y: none; }
   .auth-face .avatar { --s: 120px !important; width: 120px; height: 120px; }
 }
 @media (min-width: 1000px) and (max-height: 860px) { .scene .big-star { display: none; } }
+
+/* ---------- estado del regalo, descartados, ordenar, tallas ---------- */
+.status-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.status-pick button {
+  display: grid; justify-items: center; gap: 4px; padding: 8px 2px; border-radius: var(--r-sm);
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); font-size: .72rem; font-weight: 600; line-height: 1.15;
+}
+.status-pick .dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-size: .72rem; color: var(--fg); }
+.status-pick button[aria-checked="true"] { border-color: var(--gold); background: var(--gold-soft); color: var(--fg); }
+.status-pick button[aria-checked="true"] .dot { background: var(--gold); color: var(--on-gold); }
+.tag.warn { background: var(--danger); color: #fff; }
+.reserve-state.warn { border-color: color-mix(in srgb, var(--danger) 60%, var(--line)); background: var(--danger-bg); }
+.reserve-state.warn svg { color: var(--danger); }
+.card.discarded { opacity: .55; }
+.card.discarded .img img, .card.discarded .ph { filter: grayscale(1); }
+.list-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.tool-btn {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg); font-weight: 600; font-size: .9rem;
+}
+.tool-btn svg { width: 16px; height: 16px; color: var(--gold); }
+.tool-btn.on { background: var(--gold); color: var(--on-gold); border-color: var(--gold); }
+.tool-btn.on svg { color: var(--on-gold); }
+.reorder-hint { display: flex; gap: 8px; align-items: center; margin: 16px 0 12px; color: var(--gold); font-size: .9rem; }
+.reorder-hint svg { width: 18px; height: 18px; flex: none; }
+.grid.reordering .card { cursor: grab; animation: wiggle .5s ease-in-out infinite alternate; touch-action: none; }
+.grid.reordering .card:nth-child(2n) { animation-delay: .15s; }
+@keyframes wiggle { from { transform: rotate(-.6deg); } to { transform: rotate(.6deg); } }
+.drag-ghost { opacity: .35; }
+.drag-chosen { box-shadow: 0 16px 34px rgba(0, 0, 0, .5); outline: 2px solid var(--gold); }
+.prefs-list { display: grid; gap: 10px; margin: 0; }
+.prefs-list div { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); }
+.prefs-list dt { font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 600; }
+.prefs-list dd { margin: 2px 0 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.img-drop .hint .row .btn svg { width: 16px; height: 16px; }

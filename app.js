@@ -7,7 +7,7 @@
 
   const CFG = window.RDC_CONFIG || {};
   const DEMO = !CFG.supabaseUrl || !CFG.supabaseAnonKey;
-  const K = { family: 'rdc.family', session: 'rdc.session', theme: 'rdc.theme', demo: 'rdc.demo.v2', seen: 'rdc.seen' };
+  const K = { family: 'rdc.family', session: 'rdc.session', theme: 'rdc.theme', demo: 'rdc.demo.v2', seen: 'rdc.seen', sound: 'rdc.sound' };
 
   const ls = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -48,6 +48,9 @@
     users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.4.3 4 2.1 4.5 4.9"/></svg>',
     bag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
     wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h14a2 2 0 012 2v9a2 2 0 01-2 2H5a1 1 0 01-1-1V7z"/><path d="M4 7l11-3v3M16 13.5h.01"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12V4a1 1 0 011-1h8l9 9-9 9z"/><circle cx="8" cy="8" r="1.5"/></svg>',
+    grip: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/></svg>',
     spark: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>',
     del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 001-1V6a1 1 0 00-1-1z"/><path d="M17 9l-5 6M12 9l5 6"/></svg>',
   };
@@ -136,6 +139,10 @@
     ackFails: (t) => rpc('rdc_ack_fails', { p_token: t }),
     approve: (t, id, ok) => rpc('rdc_approve', { p_token: t, p_member: id, p_ok: ok }),
     setFamily: (t, code) => rpc('rdc_set_family', { p_token: t, p_code: code }),
+    setStatus: (t, id, status) => rpc('rdc_set_status', { p_token: t, p_item: id, p_status: status }),
+    setDiscarded: (t, id, v) => rpc('rdc_set_discarded', { p_token: t, p_item: id, p_discarded: v }),
+    reorder: (t, ids) => rpc('rdc_reorder', { p_token: t, p_ids: ids }),
+    setPrefs: (t, prefs) => rpc('rdc_set_prefs', { p_token: t, p_prefs: prefs }),
   };
 
   // ---------------------------------------------------------------- backend demo (mismo contrato)
@@ -175,16 +182,16 @@
     const fail = (c) => Promise.reject(new ApiError(c));
     const me = (t) => db.members.find((m) => m.token === t);
     const fam = (f) => String(f || '').trim().length > 0; // en el modo demo vale cualquier código
-    const pub = (m) => ({ id: m.id, name: m.name, color: m.color, photo: m.photo || null });
-    const strip = ({ id, owner_id, title, url, image, price, category, priority, notes, created_at, kind }) =>
-      ({ id, owner_id, title, url, image, price, category, priority, notes, created_at, kind: kind || 'product' });
-    const sort = (a, b) => (b.priority - a.priority) || (b.created_at > a.created_at ? 1 : -1);
+    const pub = (m) => ({ id: m.id, name: m.name, color: m.color, photo: m.photo || null, prefs: m.prefs || {} });
+    const strip = ({ id, owner_id, title, url, image, price, category, priority, notes, created_at, kind, discarded, position }) =>
+      ({ id, owner_id, title, url, image, price, category, priority, notes, created_at, kind: kind || 'product', discarded: !!discarded, position: position || null });
+    const sort = (a, b) => (!!a.discarded - !!b.discarded) || ((a.position || 1e6) - (b.position || 1e6)) || (b.priority - a.priority) || (b.created_at > a.created_at ? 1 : -1);
     const isIn = (g, uid) => !!g && g.members.some((x) => x.id === uid);
     const giftJson = (itemId, uid) => {
       const g = db.gifts[itemId];
       if (!g) return { reserved: false, reserved_by_me: false, reserved_by: null, gift: null };
       const members = g.members.map((x) => ({ ...pub(db.members.find((m) => m.id === x.id) || { id: x.id, name: '?' }), amount: x.amount }));
-      return { reserved: true, reserved_by_me: isIn(g, uid), reserved_by: members.map((x) => x.name).join(', '), gift: { open: g.open, bought: g.bought, members } };
+      return { reserved: true, reserved_by_me: isIn(g, uid), reserved_by: members.map((x) => x.name).join(', '), gift: { open: g.open, bought: g.bought, status: g.status || (g.bought ? 'home' : 'pending'), members } };
     };
     const itemOf = (id, u) => {
       const it = db.items.find((i) => i.id === id);
@@ -226,7 +233,7 @@
         const u = me(t); if (!u) return fail('sesion');
         const list = db.items.filter((i) => i.owner_id === owner).sort(sort);
         if (owner === u.id) return wait({ items: list.map(strip) });
-        return wait({ items: list.map((i) => ({ ...strip(i), ...giftJson(i.id, u.id) })) });
+        return wait({ items: list.filter((i) => !i.discarded || isIn(db.gifts[i.id], u.id)).map((i) => ({ ...strip(i), ...giftJson(i.id, u.id) })) });
       },
       gifts(t) {
         const u = me(t); if (!u) return fail('sesion');
@@ -312,6 +319,22 @@
       ackFails: () => wait({ ok: true }),
       approve: () => wait({ ok: true }),
       setFamily: () => wait({ ok: true }),
+      setStatus(t, id, status) {
+        const u = me(t); if (!u) return fail('sesion');
+        const g = db.gifts[id]; if (!isIn(g, u.id)) return fail('no_existe');
+        g.status = status; g.bought = status !== 'pending'; save(); return wait({ ok: true });
+      },
+      setDiscarded(t, id, v) {
+        const u = me(t); if (!u) return fail('sesion');
+        const it = db.items.find((i) => i.id === id && i.owner_id === u.id); if (!it) return fail('no_existe');
+        it.discarded = !!v; save(); return wait({ ok: true });
+      },
+      reorder(t, ids) {
+        const u = me(t); if (!u) return fail('sesion');
+        ids.forEach((id, n) => { const it = db.items.find((i) => i.id === id && i.owner_id === u.id); if (it) it.position = n + 1; });
+        save(); return wait({ ok: true });
+      },
+      setPrefs(t, prefs) { const u = me(t); if (!u) return fail('sesion'); u.prefs = prefs; save(); return wait({ ok: true }); },
       reset() { db = seed(); save(); },
     };
   })();
@@ -466,7 +489,7 @@
     gifts: null,
     cat: {},         // ownerId -> categoría elegida
     budget: null,    // presupuesto por persona
-    viewing: null, since: null, editBudget: false,
+    viewing: null, since: null, editBudget: false, reorder: false,
     auth: { step: 'code', members: [], pick: null, error: '' },
   };
 
@@ -767,7 +790,7 @@
 
   // ---------- lista de una persona
   function ownerInfo(ownerId) {
-    if (ownerId === S.session.id) return { ...S.session, mine: true };
+    if (ownerId === S.session.id) return { ...S.session, prefs: (S.home && S.home.me && S.home.me.prefs) || {}, mine: true };
     const m = S.home && S.home.members.find((x) => x.id === ownerId);
     return m ? { ...m, mine: false } : { id: ownerId, name: '…', color: 0, mine: false };
   }
@@ -783,15 +806,17 @@
     const open = !!(it.gift && it.gift.open), bought = !!(it.gift && it.gift.bought);
     if (!owner.mine && it.reserved) {
       if (it.reserved_by_me) {
-        tag = opts.giftsView
-          ? (bought ? `<span class="tag mine">${I.checkCircle}Comprado</span>` : `<span class="tag todo">${I.bag}Por comprar</span>`)
+        const st = statusOf(it);
+        tag = it.discarded ? `<span class="tag warn">${I.alert}Ya no lo quiere</span>` : opts.giftsView
+          ? (st === 'pending' ? `<span class="tag todo">${I.bag}Por comprar</span>` : `<span class="tag ${st === 'home' || st === 'wrapped' ? 'mine' : 'todo'}">${st === 'home' || st === 'wrapped' ? I.checkCircle : I.bag}${statusLabel(st)}</span>`)
           : `<span class="tag mine">${open ? I.users : I.checkCircle}${open ? 'A medias contigo' : 'Lo regalas tú'}</span>`;
       } else if (open) tag = `<span class="tag share">${I.users}A medias · ¿te apuntas?</span>`;
       else { tag = `<span class="tag">${I.lock}Ya lo regala ${h(it.reserved_by || 'alguien')}</span>`; taken = true; }
     }
+    if (owner.mine && it.discarded) tag = `<span class="tag">${I.eyeOff}Descartado</span>`;
     const isNew = opts.since && it.created_at > opts.since;
     return `
-      <button class="card ${taken ? 'taken' : ''}" data-act="item" data-id="${h(it.id)}" data-owner="${h(it.owner_id)}">
+      <button class="card ${taken ? 'taken' : ''}${it.discarded ? ' discarded' : ''}" data-act="item" data-id="${h(it.id)}" data-owner="${h(it.owner_id)}">
         ${tag}
         <div class="img">${imgHtml(it, owner.color)}${isNew ? '<span class="tag-new">Nuevo</span>' : ''}</div>
         <div class="body">
@@ -813,11 +838,15 @@
       let cat = S.cat[ownerId] || 'all';
       if (cat !== 'all' && !cats.some(([c]) => c === cat)) cat = S.cat[ownerId] = 'all';
       const reservedCount = items && !owner.mine ? items.filter((i) => i.reserved_by_me).length : 0;
+      const live = items ? items.filter((i) => !i.discarded) : [];
+      const hasPrefs = owner.prefs && Object.keys(owner.prefs).length;
       let content;
       if (!items) content = '<div class="grid">' + '<div class="skeleton" style="aspect-ratio:.8"></div>'.repeat(4) + '</div>';
       else if (!items.length) content = owner.mine
         ? `<div class="empty"><span class="display">Tu carta está en blanco</span><p>Pega el enlace de algo que te guste y la app sacará la foto y el precio sola. O pide una idea, como «un libro de fantasía».</p><button class="btn btn-gold" data-act="add">${I.plus}Añadir mi primer deseo</button></div>`
         : `<div class="empty"><span class="display">${h(owner.name)} aún no ha pedido nada</span><p>Vuelve en un rato. Los Reyes también necesitan pistas.</p></div>`;
+      else if (S.reorder && owner.mine) content = `<p class="reorder-hint">${I.users}Mantén pulsada una tarjeta y arrástrala. La familia verá tu carta en este orden.</p>
+          <div class="grid reordering" id="reorder-grid">${live.map((i) => cardHtml(i, owner)).join('')}</div>`;
       else content = `<div class="grid">${items.filter((i) => cat === 'all' || (i.category || 'Sin categoría') === cat).map((i) => cardHtml(i, owner, { since })).join('')}</div>`;
 
       app.innerHTML = `
@@ -825,15 +854,20 @@
         <div class="hero-card">
           ${KINGS}${avatar(owner, 92, '', true)}
           <div class="grow"><h1 class="display">${owner.mine ? 'Mi carta' : `La carta de ${h(owner.name)}`}</h1>
-            <span class="sub">${items ? `${plural(items.length, 'deseo', 'deseos')}${reservedCount ? ` · regalas ${reservedCount}` : ''}` : '…'}</span></div>
+            <span class="sub">${items ? `${plural(live.length, 'deseo', 'deseos')}${reservedCount ? ` · regalas ${reservedCount}` : ''}` : '…'}</span></div>
         </div>
-        ${items && items.length ? `<nav class="chips" aria-label="Listas">
+        ${items && (owner.mine || hasPrefs) ? `<div class="list-tools">
+          ${owner.mine || hasPrefs ? `<button class="tool-btn" data-act="prefs" data-id="${h(owner.id)}">${I.tag}${owner.mine ? 'Mis tallas y gustos' : `Tallas y gustos de ${h(owner.name)}`}</button>` : ''}
+          ${owner.mine && live.length > 1 ? (S.reorder ? `<button class="tool-btn on" data-act="reorder-done">${I.check}Listo</button>` : `<button class="tool-btn" data-act="reorder">${I.grip}Ordenar</button>`) : ''}
+        </div>` : ''}
+        ${items && items.length && !S.reorder ? `<nav class="chips" aria-label="Listas">
           <button class="chip" aria-pressed="${cat === 'all'}" data-act="cat" data-cat="all">Todo</button>
           ${cats.map(([c, n]) => `<button class="chip" aria-pressed="${cat === c}" data-act="cat" data-cat="${h(c)}">${h(c)} <span class="n">${n}</span></button>`).join('')}
         </nav>` : '<div style="height:16px"></div>'}
         ${content}
         ${owner.mine && items && items.length ? `<p class="note-card">${I.info}<span>Nunca verás qué te han reservado.<span>Así hay sorpresa.</span></span></p>` : ''}
-        ${owner.mine ? `<button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>` : ''}`;
+        ${owner.mine && !S.reorder ? `<button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>` : ''}`;
+      if (S.reorder && owner.mine) startSortable();
     };
     paint();
     try {
@@ -852,7 +886,8 @@
     const paint = () => {
       const items = S.gifts, budget = S.budget;
       const total = items ? items.reduce((s, i) => s + myCost(i), 0) : 0;
-      const bought = items ? items.filter((i) => i.gift && i.gift.bought).length : 0;
+      const bought = items ? items.filter((i) => statusOf(i) !== 'pending').length : 0;
+      const dropped = items ? items.filter((i) => i.discarded) : [];
       const groups = new Map();
       (items || []).forEach((i) => { if (!groups.has(i.owner_id)) groups.set(i.owner_id, { name: i.owner_name, color: i.owner_color, photo: i.owner_photo, items: [] }); groups.get(i.owner_id).items.push(i); });
       const budgetBox = S.editBudget
@@ -869,6 +904,7 @@
           <div class="grow"><p class="eyebrow">Tus reservas</p><h1 class="display">Lo que regalo yo</h1>
           <span class="sub">${items ? (items.length ? `${plural(items.length, 'regalo', 'regalos')} · ${bought} ${bought === 1 ? 'comprado' : 'comprados'}` : 'Aún ninguno') : '…'}</span></div>
         </div>
+        ${dropped.length ? `<p class="alert-card" role="alert">${I.alert}<span class="grow"><b>${h([...new Set(dropped.map((i) => i.owner_name))].join(' y '))} ya no ${dropped.length === 1 ? 'quiere uno' : 'quieren algunos'} de tus regalos.</b><span>Ábrelos para decidir qué hacer.</span></span></p>` : ''}
         ${budgetBox}
         ${!items ? '<div class="skeleton" style="height:200px;margin-top:18px"></div>'
           : !items.length ? `<div class="empty" style="margin-top:18px"><span class="display">Aún no has elegido nada</span><p>Entra en la carta de alguien, abre un deseo y pulsa «¡Lo regalo yo!» o «Lo regalamos a medias».</p><button class="btn btn-ghost" data-act="home">Ver la familia</button></div>`
@@ -933,6 +969,14 @@
   }
   const whoList = (it) => giftMembers(it).map((m) => `
     <li>${avatar(m, 30, '', true)}<span class="grow">${m.id === S.session.id ? 'Tú' : h(m.name)}</span><span class="tnum muted">${m.amount != null ? `pone ${h(eur(m.amount))}` : 'sin cantidad'}</span></li>`).join('');
+  const STATUS = [
+    ['pending', 'Por comprar'], ['ordered', 'Pedido'], ['shipping', 'En camino'], ['home', 'En casa'], ['wrapped', 'Envuelto'],
+  ];
+  const statusOf = (it) => (it.gift && (it.gift.status || (it.gift.bought ? 'home' : 'pending'))) || 'pending';
+  const statusLabel = (st) => (STATUS.find(([k]) => k === st) || STATUS[0])[1];
+  const statusPicker = (it) => `<div class="status-pick" role="radiogroup" aria-label="Dónde está el regalo">
+      ${STATUS.map(([k, label], n) => `<button type="button" role="radio" data-act="status" data-id="${h(it.id)}" data-s="${k}" aria-checked="${statusOf(it) === k}"><span class="dot">${n + 1}</span>${label}</button>`).join('')}
+    </div>`;
   const boughtBtn = (it) => it.gift && it.gift.bought
     ? `<button class="btn btn-ghost btn-block bought-on" data-act="bought" data-id="${h(it.id)}" data-v="0">${I.checkCircle}Comprado · desmarcar</button>`
     : `<button class="btn btn-ghost btn-block" data-act="bought" data-id="${h(it.id)}" data-v="1">${I.bag}Marcar como comprado</button>`;
@@ -943,7 +987,10 @@
     const owner = mine ? S.session : (S.home && S.home.members.find((m) => m.id === it.owner_id)) || { name: it.owner_name || '', color: it.owner_color || 0 };
     const g = it.gift, open = !!(g && g.open), sid = h(it.id);
     let reserve = '';
-    if (!mine) {
+    if (!mine && it.discarded) {
+      reserve = `<div class="reserve-state warn">${I.alert}<span><b>${h(owner.name)} ya no lo quiere.</b> ${it.reserved_by_me ? 'Si ya lo habías comprado, decide si se lo das igualmente o lo devuelves.' : ''}</span></div>
+        ${it.reserved_by_me ? `${statusPicker(it)}<button class="btn btn-ghost btn-block" data-act="unreserve" data-id="${sid}">Salirme del regalo</button>` : ''}`;
+    } else if (!mine) {
       if (!it.reserved) reserve = `
         <button class="btn btn-gold btn-block" data-act="reserve" data-id="${sid}">${I.gift}¡Lo regalo yo!</button>
         <button class="btn btn-ghost btn-block" data-act="share" data-id="${sid}">${I.users}Lo regalamos a medias</button>
@@ -951,7 +998,7 @@
         <p class="secret-note">${I.eyeOff}<span>${h(owner.name)} no verá que lo has reservado. El resto de la familia sí, para no repetir. «A medias» deja que otros se apunten contigo.</span></p>`;
       else if (it.reserved_by_me && !open) reserve = `
         <div class="reserve-state mine">${I.checkCircle}<span><b>Lo regalas tú.</b> Nadie más puede reservarlo.</span></div>
-        ${boughtBtn(it)}
+        ${statusPicker(it)}
         <div class="row" style="flex-wrap:nowrap"><button class="btn btn-ghost btn-sm" style="flex:1" data-act="share" data-id="${sid}">${I.users}Abrir a medias</button>
           <button class="btn btn-ghost btn-sm" style="flex:1" data-act="unreserve" data-id="${sid}">Ya no lo regalo</button></div>`;
       else if (it.reserved_by_me) {
@@ -964,7 +1011,7 @@
           <div class="price-wrap"><input class="input tnum" id="f-amount" inputmode="decimal" placeholder="${h(String(Math.round(myCost(it) * 100) / 100).replace('.', ','))}" value="${meM.amount != null ? h(String(meM.amount).replace('.', ',')) : ''}"><span>€</span></div>
           <button class="btn btn-ghost btn-sm" type="submit">Guardar</button>
         </form>
-        ${boughtBtn(it)}
+        ${statusPicker(it)}
         <button class="btn btn-ghost btn-block" data-act="unreserve" data-id="${sid}">Salirme del regalo</button>`;
       } else if (open) reserve = `
         <div class="reserve-state share">${I.users}<span><b>Lo regalan a medias.</b> ¿Te apuntas?${g.bought ? ' Ya está comprado.' : ''}</span></div>
@@ -987,6 +1034,9 @@
         <div class="actions">
           ${reserve}
           ${isUrl(it.url) ? `<a class="btn btn-ghost btn-block" href="${h(safeHref(it.url))}" target="_blank" rel="noopener noreferrer">${I.link}Ver en la tienda</a>` : ''}
+          ${mine && it.discarded ? `<div class="reserve-state warn">${I.eyeOff}<span><b>Lo has descartado.</b> La familia ya no lo ve; si alguien lo tenía reservado, le avisamos.</span></div>
+            <button class="btn btn-gold btn-block" data-act="discard" data-id="${h(it.id)}" data-v="0">Lo vuelvo a querer</button>` : ''}
+          ${mine && !it.discarded ? `<button class="btn btn-ghost btn-block" data-act="discard" data-id="${h(it.id)}" data-v="1">${I.eyeOff}Ya no lo quiero</button>` : ''}
           ${mine ? `<div class="row" style="flex-wrap:nowrap"><button class="btn btn-ghost" style="flex:1" data-act="edit" data-id="${h(it.id)}">${I.edit}Editar</button>
             <button class="btn btn-danger" style="flex:1" data-act="ask-delete">${I.trash}Borrar</button></div>
             <div class="confirm-box" id="confirm-del" hidden><p>¿Borrar «${h(it.title)}» de tu carta? No se puede deshacer.</p>
@@ -1028,7 +1078,8 @@
 
         <div class="field"><span class="label">Foto</span>
           <div class="img-drop" id="img-drop"></div>
-          <input type="file" id="f-file" accept="image/*" hidden></div>
+          <input type="file" id="f-file" accept="image/*" hidden>
+          <input type="file" id="f-camera" accept="image/*" capture="environment" hidden></div>
         </div>
 
         <div class="field"><label for="f-title" id="f-title-l">Nombre</label>
@@ -1076,7 +1127,7 @@
     box.innerHTML = F.image
       ? `<img src="${h(F.image)}" alt="Foto del deseo" referrerpolicy="no-referrer"><div class="img-tools"><button type="button" class="btn btn-sm" data-act="pick-file">Cambiar</button><button type="button" class="btn btn-sm" data-act="clear-img">Quitar</button></div>`
       : `<div class="hint">${I.image}<span>${F.fetching ? 'Buscando la foto…' : 'Si no sale sola: mantén pulsada la foto en la tienda, «Copiar», y pégala aquí.'}</span>
-          <div class="row" style="justify-content:center">${canRead ? '<button type="button" class="btn btn-ghost btn-sm" data-act="paste-img">Pegar foto</button>' : ''}<button type="button" class="btn btn-ghost btn-sm" data-act="pick-file">Elegir de mis fotos</button></div></div>`;
+          <div class="row" style="justify-content:center">${canRead ? '<button type="button" class="btn btn-ghost btn-sm" data-act="paste-img">Pegar foto</button>' : ''}<button type="button" class="btn btn-ghost btn-sm" data-act="pick-camera">${I.camera}Hacer foto</button><button type="button" class="btn btn-ghost btn-sm" data-act="pick-file">Elegir de mis fotos</button></div></div>`;
   }
 
   function setFetchState(text, cls = '') {
@@ -1135,6 +1186,8 @@
       <div class="menu-list">
         <button class="btn btn-ghost btn-block" data-act="menu-budget">${I.wallet}${S.budget ? `Presupuesto: ${h(eur(S.budget))} por persona` : 'Ponerme un presupuesto'}</button>
         ${DEMO ? '<button class="btn btn-ghost btn-block" data-act="demo-reset">Restablecer datos de ejemplo</button>' : ''}
+        <button class="btn btn-ghost btn-block" data-act="prefs" data-id="${h(S.session.id)}">${I.tag}Mis tallas y gustos</button>
+        <button class="btn btn-ghost btn-block" data-act="toggle-sound">${soundOn() ? 'Sonidos y vibración: activados' : 'Sonidos y vibración: desactivados'}</button>
         <button class="btn btn-ghost btn-block" data-act="change-pin">${I.lock}Cambiar mi PIN</button>
         ${S.home && S.home.me && S.home.me.admin ? `<button class="btn btn-ghost btn-block" data-act="change-family">${I.users}Cambiar código de familia</button>` : ''}
         <button class="btn btn-ghost btn-block" data-act="ask-logout-all">Cerrar sesión en todos mis móviles</button>
@@ -1144,6 +1197,95 @@
       </div>
       <p class="muted" style="font-size:.85rem;margin:16px 0 0">Para entrar en otro móvil necesitas el código de familia, tu nombre y tu PIN.</p>`, 'Menú');
   }
+  // ---------- tallas y gustos
+  const PREFS = [
+    ['top', 'Camiseta / jersey', 'Ej.: M'], ['bottom', 'Pantalón', 'Ej.: 40 o 30/32'], ['shoes', 'Calzado', 'Ej.: 43'],
+    ['ring', 'Otras tallas', 'Anillo, sujetador, guantes…'], ['colors', 'Colores que me gustan', 'Ej.: azul marino, verde'],
+    ['likes', 'Me encanta', 'Marcas, aficiones, autores…'], ['dislikes', 'Mejor no', 'Lo que no te gusta o ya tienes'],
+    ['notes', 'Otras pistas', 'Lo que ayude a acertar'],
+  ];
+  function openPrefs(memberId) {
+    const mine = memberId === S.session.id;
+    const m = mine ? ownerInfo(S.session.id) : ownerInfo(memberId);
+    const p = m.prefs || {};
+    if (!mine) {
+      const rows = PREFS.filter(([k]) => p[k]);
+      openSheet(`${sheetHead('Para acertar', `Tallas y gustos de ${m.name}`)}
+        ${rows.length ? `<dl class="prefs-list">${rows.map(([k, label]) => `<div><dt>${h(label)}</dt><dd>${h(p[k])}</dd></div>`).join('')}</dl>`
+          : `<p class="muted">${h(m.name)} todavía no ha puesto sus tallas.</p>`}`, `Tallas y gustos de ${m.name}`);
+      return;
+    }
+    openSheet(`${sheetHead('Tu perfil', 'Mis tallas y gustos')}
+      <form class="stack" data-form="prefs" novalidate>
+        <p class="secret-note">${I.users}<span>Lo verá toda la familia, para acertar con la talla y el estilo sin preguntarte.</span></p>
+        <div class="two">${PREFS.slice(0, 4).map(([k, label, ph]) => `<div class="field"><label for="p-${k}">${label}</label><input class="input" id="p-${k}" maxlength="200" placeholder="${h(ph)}" value="${h(p[k] || '')}"></div>`).join('')}</div>
+        ${PREFS.slice(4).map(([k, label, ph]) => `<div class="field"><label for="p-${k}">${label}</label><input class="input" id="p-${k}" maxlength="200" placeholder="${h(ph)}" value="${h(p[k] || '')}"></div>`).join('')}
+        <button class="btn btn-gold btn-block" type="submit">Guardar</button>
+      </form>`, 'Mis tallas y gustos');
+  }
+
+  // ---------- ordenar mi carta arrastrando (SortableJS se carga solo cuando hace falta)
+  let sortable = null;
+  function loadSortable() {
+    if (window.Sortable) return Promise.resolve();
+    return new Promise((ok, ko) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js';
+      sc.onload = ok; sc.onerror = ko; document.head.appendChild(sc);
+    });
+  }
+  async function startSortable() {
+    try { await loadSortable(); } catch { toast('No he podido cargar el modo ordenar. Revisa la conexión.'); S.reorder = false; return; }
+    const grid = $('#reorder-grid'); if (!grid) return;
+    if (sortable) { try { sortable.destroy(); } catch { /* nada */ } }
+    sortable = window.Sortable.create(grid, {
+      animation: 160, delay: 120, delayOnTouchOnly: true, ghostClass: 'drag-ghost', chosenClass: 'drag-chosen',
+      onEnd: () => { if (navigator.vibrate) try { navigator.vibrate(15); } catch { /* nada */ } },
+    });
+  }
+  async function saveOrder() {
+    const grid = $('#reorder-grid');
+    const ids = grid ? $$('.card', grid).map((c) => c.dataset.id) : [];
+    S.reorder = false;
+    if (sortable) { try { sortable.destroy(); } catch { /* nada */ } sortable = null; }
+    if (ids.length) {
+      try {
+        await api.reorder(S.session.token, ids);
+        const list = S.items[S.session.id] || [];
+        ids.forEach((id, n) => { const it = list.find((i) => i.id === id); if (it) it.position = n + 1; });
+        list.sort((a, b) => (!!a.discarded - !!b.discarded) || ((a.position || 1e6) - (b.position || 1e6)));
+        toast('Orden guardado');
+      } catch (err) { handleErr(err); }
+    }
+    S.cat[S.session.id] = 'all';
+    renderList(S.session.id);
+  }
+
+  // ---------- sonido y vibración (sin archivos: notas generadas)
+  const soundOn = () => ls.get(K.sound) !== false;
+  let actx = null;
+  function unlockAudio() {
+    if (!soundOn()) return;
+    try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch { actx = null; }
+  }
+  function chime(kind) {
+    if (!soundOn()) return;
+    unlockAudio();
+    if (navigator.vibrate) try { navigator.vibrate(kind === 'done' ? [20, 60, 30] : 12); } catch { /* nada */ }
+    if (!actx) return;
+    const notes = kind === 'done' ? [1046.5, 1318.5, 1568] : [880];
+    const t0 = actx.currentTime;
+    notes.forEach((f, n) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + n * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.18, t0 + n * 0.09 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + n * 0.09 + 0.55);
+      o.connect(g); g.connect(actx.destination);
+      o.start(t0 + n * 0.09); o.stop(t0 + n * 0.09 + 0.6);
+    });
+  }
+
   function openPinForm() {
     const pinInput = (id, label) => `<div class="field"><label for="${id}">${label}</label>
       <input class="input pin-input tnum" id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"></div>`;
@@ -1171,6 +1313,7 @@
   // ---------------------------------------------------------------- eventos
   document.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
+    if (el && (el.dataset.act === 'status' || el.dataset.act === 'reserve' || el.dataset.act === 'share')) unlockAudio();
     if (!el) return;
     const act = el.dataset.act;
     if (act === 'backdrop' && e.target !== el) return;
@@ -1207,7 +1350,28 @@
       case 'home': go(''); break;
       case 'gifts': go('regalos'); break;
       case 'cat': { const r = route(); S.cat[r.owner] = el.dataset.cat; renderList(r.owner); window.scrollTo({ top: 0 }); break; }
-      case 'item': openDetail(id); break;
+      case 'item': if (!S.reorder) openDetail(id); break;
+      case 'prefs': openPrefs(id); break;
+      case 'reorder': S.reorder = true; renderList(S.session.id); break;
+      case 'reorder-done': await saveOrder(); break;
+      case 'status': {
+        chime('soft'); el.disabled = true;
+        try {
+          await api.setStatus(S.session.token, id, el.dataset.s);
+          if (el.dataset.s === 'wrapped' || el.dataset.s === 'home') chime('done');
+          await afterGiftChange(id, `Marcado: ${statusLabel(el.dataset.s).toLowerCase()}`, true);
+        } catch (err) { el.disabled = false; handleErr(err); }
+        break;
+      }
+      case 'discard':
+        el.disabled = true;
+        try {
+          await api.setDiscarded(S.session.token, id, el.dataset.v === '1');
+          closeSheet(); toast(el.dataset.v === '1' ? 'Descartado: la familia ya no lo verá' : 'De vuelta en tu carta');
+          S.home = null; refreshCurrent();
+        } catch (err) { el.disabled = false; handleErr(err); }
+        break;
+      case 'toggle-sound': ls.set(K.sound, !soundOn()); if (soundOn()) chime('done'); openMenu(); break;
       case 'close': case 'backdrop': closeSheet(); F = null; break;
       case 'add': openForm(null); break;
       case 'edit': closeSheet(); openForm(id); break;
@@ -1219,11 +1383,12 @@
         catch (err) { el.disabled = false; handleErr(err); }
         break;
       case 'reserve': case 'unreserve': case 'share': case 'bought':
-        el.disabled = true;
+        el.disabled = true; unlockAudio();
         try {
           if (act === 'share') await api.share(S.session.token, id);
           else if (act === 'bought') await api.setBought(S.session.token, id, el.dataset.v === '1');
           else await api.reserve(S.session.token, id, act === 'reserve');
+          if (act === 'reserve' || act === 'share') chime('done');
           const msg = { reserve: '¡Apuntado! Es tu regalo', unreserve: 'Ya no participas en este regalo', share: 'Apuntado a medias', bought: el.dataset.v === '1' ? 'Marcado como comprado' : 'Desmarcado' }[act];
           await afterGiftChange(id, msg, act === 'share' || act === 'bought');
         } catch (err) {
@@ -1259,6 +1424,7 @@
         } catch { toast('No he podido pegar. Prueba con «Elegir de mis fotos».'); }
         break;
       case 'pick-file': $('#f-file').click(); break;
+      case 'pick-camera': $('#f-camera').click(); break;
       case 'pick-avatar': $('#f-avatar').click(); break;
       case 'clear-avatar': savePhoto(null); break;
       case 'clear-img': F.image = null; paintImage(); break;
@@ -1281,7 +1447,7 @@
   });
 
   document.addEventListener('change', (e) => {
-    if (e.target.id === 'f-file' && e.target.files[0]) { setImageBlob(e.target.files[0]); e.target.value = ''; }
+    if ((e.target.id === 'f-file' || e.target.id === 'f-camera') && e.target.files[0]) { setImageBlob(e.target.files[0]); e.target.value = ''; }
     if (e.target.id === 'f-avatar' && e.target.files[0]) {
       const file = e.target.files[0]; e.target.value = '';
       compressAvatar(file).then(savePhoto, () => toast('No he podido leer esa imagen.'));
@@ -1291,7 +1457,6 @@
   // tras reservar, apuntarse a medias, marcar comprado o cambiar mi parte: datos frescos y misma pantalla
   async function afterGiftChange(id, msg, reopen) {
     const r = route();
-    S.home = null;
     try {
       const jobs = [api.gifts(S.session.token)];
       if (r.view === 'list') jobs.push(api.items(S.session.token, r.owner));
@@ -1331,6 +1496,16 @@
     const showErr = (msg) => { const p = $('.error-msg', form); if (p) p.textContent = msg; };
     // errores del PIN: se repinta la pantalla con el aviso y se agita la casilla afectada
     const pinErr = (msg, shake = 'pin') => { S.auth.error = msg; renderAuth(); shakePins(shake); };
+    if (kind === 'prefs') {
+      const prefs = {}; PREFS.forEach(([k]) => { const v = $('#p-' + k).value.trim(); if (v) prefs[k] = v; });
+      btn.disabled = true;
+      try {
+        await api.setPrefs(S.session.token, prefs);
+        if (S.home && S.home.me) S.home.me.prefs = prefs;
+        closeSheet(); toast('Tallas y gustos guardados'); render();
+      } catch (e2) { btn.disabled = false; handleErr(e2); }
+      return;
+    }
     if (kind === 'change-pin') {
       const o = $('#f-pin-old').value, n = $('#f-pin-new').value, n2 = $('#f-pin-new2').value, err = $('#pin-form-error');
       if (!/^\d{4}$/.test(o) || !/^\d{4}$/.test(n)) { err.textContent = ERR.pin_formato; return; }
@@ -1403,6 +1578,7 @@
         const editing = !!F.id;
         F = null; closeSheet();
         toast(editing ? 'Cambios guardados' : 'Añadido a tu carta');
+        if (!editing) chime('soft');
         S.home = null;
         if (category) S.cat[S.session.id] = S.cat[S.session.id] === 'all' || !S.cat[S.session.id] ? 'all' : category;
         if (route().view === 'list' && route().owner === S.session.id) refreshCurrent(); else go('mia');
@@ -1419,7 +1595,7 @@
     }
   });
   window.addEventListener('hashchange', () => {
-    closeSheet(); F = null; if (route().view !== 'gifts') S.editBudget = false; window.scrollTo({ top: 0 });
+    closeSheet(); F = null; S.reorder = false; if (route().view !== 'gifts') S.editBudget = false; window.scrollTo({ top: 0 });
     const r = route(); if (r.view !== 'list' || r.owner !== S.viewing) S.viewing = null;
     render();
   });
@@ -1482,7 +1658,7 @@
     });
   })();
 
-  const APP_VERSION = 10;
+  const APP_VERSION = 11;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
