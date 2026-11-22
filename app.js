@@ -57,7 +57,12 @@
     const photo = m && typeof m.photo === 'string' && m.photo.startsWith('data:image/') ? m.photo : null;
     return `<span class="avatar${photo ? ' has-photo' : ''}${ring ? ' ring' : ''}" style="--s:${size}px;--c:var(--m${(m && m.color) || 0})" aria-hidden="true">${photo ? `<img src="${h(photo)}" alt="">` : h(initial(m && m.name))}${badge ? `<span class="badge">${h(badge)}</span>` : ''}</span>`;
   };
-  const imgHtml = (it, color = 1) => it.image
+  const isIdea = (it) => it && it.kind === 'idea';
+  // una idea no tiene foto: se dibuja una tarjeta con la estrella y «Sorpréndeme»
+  const priceText = (it) => isIdea(it) ? (it.price ? `Hasta ${eur(it.price)}` : 'Sin límite') : eur(it.price);
+  const imgHtml = (it, color = 1) => isIdea(it)
+    ? `<div class="idea-art" aria-hidden="true">${I.spark}<span>Sorpréndeme</span></div>`
+    : it.image
     ? `<img src="${h(it.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" ${it.image.startsWith('data:') ? 'class="cover"' : ''} data-i="${h(initial(it.title))}" onerror="var d=document.createElement('div');d.className='ph';d.textContent=this.dataset.i;this.replaceWith(d)">`
     : `<div class="ph" style="--c:var(--m${color})">${h(initial(it.title))}</div>`;
 
@@ -146,6 +151,7 @@
         it('ana', 'El infinito en un junco · Irene Vallejo', 'Libros', 3, 22.9),
         it('ana', 'Jersey de lana gruesa', 'Ropa', 1, 49.95, 'Talla M, color crudo o verde'),
         it('ana', 'Clase de cerámica para dos', 'Experiencias', 2, 70),
+        { ...it('ana', 'Un libro de fantasía que te haya encantado', 'Libros', 2, 25, 'Mejor si es el primero de una saga'), kind: 'idea' },
         it('mama', 'Perfume de flor de azahar', 'Cuidado personal', 3, 65),
         it('mama', 'Batidora de vaso', 'Casa', 2, 89.9),
         it('mama', 'Patria · Fernando Aramburu', 'Libros', 1, 21.75),
@@ -170,8 +176,8 @@
     const me = (t) => db.members.find((m) => m.token === t);
     const fam = (f) => String(f || '').trim().length > 0; // en el modo demo vale cualquier código
     const pub = (m) => ({ id: m.id, name: m.name, color: m.color, photo: m.photo || null });
-    const strip = ({ id, owner_id, title, url, image, price, category, priority, notes, created_at }) =>
-      ({ id, owner_id, title, url, image, price, category, priority, notes, created_at });
+    const strip = ({ id, owner_id, title, url, image, price, category, priority, notes, created_at, kind }) =>
+      ({ id, owner_id, title, url, image, price, category, priority, notes, created_at, kind: kind || 'product' });
     const sort = (a, b) => (b.priority - a.priority) || (b.created_at > a.created_at ? 1 : -1);
     const isIn = (g, uid) => !!g && g.members.some((x) => x.id === uid);
     const giftJson = (itemId, uid) => {
@@ -234,7 +240,8 @@
         const u = me(t); if (!u) return fail('sesion');
         const title = String(item.title || '').trim();
         if (!title) return fail('titulo');
-        const clean = { title, url: item.url || null, image: item.image || null, price: item.price === '' || item.price == null ? null : Number(item.price),
+        const idea = item.kind === 'idea';
+        const clean = { kind: idea ? 'idea' : 'product', title, url: idea ? null : item.url || null, image: idea ? null : item.image || null, price: item.price === '' || item.price == null ? null : Number(item.price),
           category: String(item.category || '').trim() || null, priority: Math.min(3, Math.max(1, Number(item.priority) || 2)), notes: String(item.notes || '').trim() || null };
         if (item.id) {
           const ex = db.items.find((i) => i.id === item.id && i.owner_id === u.id);
@@ -789,7 +796,7 @@
         <div class="img">${imgHtml(it, owner.color)}${isNew ? '<span class="tag-new">Nuevo</span>' : ''}</div>
         <div class="body">
           <span class="title">${h(it.title)}</span>
-          <span class="foot"><span class="price">${opts.giftsView && open ? `${h(eur(myCost(it)))}<small>tu parte de ${h(eur(it.price) || '—')}</small>` : h(eur(it.price))}</span>${stars(it.priority)}</span>
+          <span class="foot"><span class="price">${opts.giftsView && open ? `${h(eur(myCost(it)))}<small>tu parte de ${h(eur(it.price) || '—')}</small>` : (isIdea(it) ? `<small>${it.price ? 'hasta' : 'precio'}</small>${h(it.price ? eur(it.price) : 'libre')}` : h(eur(it.price)))}</span>${stars(it.priority)}</span>
         </div>
       </button>`;
   }
@@ -809,7 +816,7 @@
       let content;
       if (!items) content = '<div class="grid">' + '<div class="skeleton" style="aspect-ratio:.8"></div>'.repeat(4) + '</div>';
       else if (!items.length) content = owner.mine
-        ? `<div class="empty"><span class="display">Tu carta está en blanco</span><p>Pega el enlace de algo que te guste y la app sacará la foto y el precio sola.</p><button class="btn btn-gold" data-act="add">${I.plus}Añadir mi primer deseo</button></div>`
+        ? `<div class="empty"><span class="display">Tu carta está en blanco</span><p>Pega el enlace de algo que te guste y la app sacará la foto y el precio sola. O pide una idea, como «un libro de fantasía».</p><button class="btn btn-gold" data-act="add">${I.plus}Añadir mi primer deseo</button></div>`
         : `<div class="empty"><span class="display">${h(owner.name)} aún no ha pedido nada</span><p>Vuelve en un rato. Los Reyes también necesitan pistas.</p></div>`;
       else content = `<div class="grid">${items.filter((i) => cat === 'all' || (i.category || 'Sin categoría') === cat).map((i) => cardHtml(i, owner, { since })).join('')}</div>`;
 
@@ -971,9 +978,10 @@
       <div class="detail">
         <div class="detail-img">${imgHtml(it, owner.color)}</div>
         <div class="stack" style="gap:8px">
-          ${it.category ? `<p class="eyebrow">${h(it.category)}</p>` : ''}
+          <p class="eyebrow">${[isIdea(it) ? 'Idea · Sorpréndeme' : '', it.category ? h(it.category) : ''].filter(Boolean).join(' · ')}</p>
           <h2>${h(it.title)}</h2>
-          <div class="meta-row">${it.price ? `<span class="big-price">${h(eur(it.price))}</span>` : ''}<span>${stars(it.priority)} ${h(PRIO[it.priority])}</span></div>
+          <div class="meta-row">${it.price || isIdea(it) ? `<span class="big-price">${h(priceText(it))}</span>` : ''}<span>${stars(it.priority)} ${h(PRIO[it.priority])}</span></div>
+          ${isIdea(it) ? `<p class="secret-note">${I.spark}<span>${mine ? 'Es una idea: quien te lo regale elegirá el modelo concreto.' : `${h(owner.name)} deja que elijas tú. Cualquier cosa que encaje con la idea vale.`}</span></p>` : ''}
         </div>
         ${it.notes ? `<div class="notes">${h(it.notes)}</div>` : ''}
         <div class="actions">
@@ -1000,13 +1008,19 @@
     const it = id ? findItem(id) : null;
     F = { id: it ? it.id : null, url: it ? it.url || '' : '', title: it ? it.title : '', price: it && it.price != null ? String(it.price).replace('.', ',') : '',
       image: it ? it.image : null, category: it ? it.category || '' : (S.cat[S.session.id] && S.cat[S.session.id] !== 'all' && S.cat[S.session.id] !== 'Sin categoría' ? S.cat[S.session.id] : ''),
-      priority: it ? it.priority : 2, notes: it ? it.notes || '' : '', dirty: {}, fetching: false, lastFetched: it ? it.url : null };
+      priority: it ? it.priority : 2, notes: it ? it.notes || '' : '', dirty: {}, fetching: false, lastFetched: it ? it.url : null,
+      kind: isIdea(it) ? 'idea' : 'product' };
     const own = myCategories();
     const cats = [...own, ...SUGGESTED.filter((c) => !own.includes(c))];
     if (F.category && !cats.includes(F.category)) cats.unshift(F.category);
     openSheet(`
       ${sheetHead(id ? 'Editar' : 'Nuevo deseo', id ? 'Editar deseo' : 'Añadir a mi carta')}
       <form class="stack" data-form="item" novalidate>
+        <div class="kind-toggle" role="radiogroup" aria-label="Tipo de deseo">
+          <button type="button" role="radio" data-act="kind" data-k="product" aria-checked="${F.kind === 'product'}">${I.link}<span><b>Producto concreto</b><small>Con enlace de la tienda</small></span></button>
+          <button type="button" role="radio" data-act="kind" data-k="idea" aria-checked="${F.kind === 'idea'}">${I.spark}<span><b>Idea</b><small>«Sorpréndeme con…»</small></span></button>
+        </div>
+        <div class="stack" id="product-fields">
         <div class="field"><label for="f-url">Enlace del producto</label>
           <div class="url-row"><input class="input" id="f-url" name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…" value="${h(F.url)}" ${id ? '' : 'data-autofocus'}>
           ${navigator.clipboard && navigator.clipboard.readText ? `<button class="btn btn-ghost" type="button" data-act="paste-url">Pegar</button>` : ''}</div>
@@ -1015,12 +1029,13 @@
         <div class="field"><span class="label">Foto</span>
           <div class="img-drop" id="img-drop"></div>
           <input type="file" id="f-file" accept="image/*" hidden></div>
+        </div>
 
-        <div class="field"><label for="f-title">Nombre</label>
+        <div class="field"><label for="f-title" id="f-title-l">Nombre</label>
           <input class="input" id="f-title" name="title" maxlength="160" placeholder="Ej.: Botas de fútbol Mercurial" value="${h(F.title)}"></div>
 
         <div class="two">
-          <div class="field"><label for="f-price">Precio aproximado</label>
+          <div class="field"><label for="f-price" id="f-price-l">Precio aproximado</label>
             <div class="price-wrap"><input class="input tnum" id="f-price" name="price" inputmode="decimal" placeholder="0,00" value="${h(F.price)}"><span>€</span></div></div>
           <div class="field"><span class="label">¿Cuánta ilusión te hace?</span>
             <div class="prio" role="group" aria-label="Prioridad">${[1, 2, 3].map((p) => `<button type="button" data-act="prio" data-p="${p}" aria-pressed="${F.priority === p}">${stars(p)}<span>${['Ilusión', 'Me encanta', 'Muchísimo'][p - 1]}</span></button>`).join('')}</div></div>
@@ -1040,7 +1055,18 @@
         <button class="btn btn-gold btn-block" type="submit" id="f-save">${id ? 'Guardar cambios' : 'Añadir a mi carta'}</button>
       </form>`, id ? 'Editar deseo' : 'Añadir deseo');
     paintImage();
+    applyKind();
     document.addEventListener('paste', onPasteImage);
+  }
+
+  function applyKind() {
+    const idea = F.kind === 'idea';
+    $$('.kind-toggle [data-act="kind"]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.k === F.kind)));
+    $('#product-fields').hidden = idea;
+    $('#f-title-l').textContent = idea ? '¿Qué te apetece?' : 'Nombre';
+    $('#f-title').placeholder = idea ? 'Ej.: Un libro de fantasía, algo para la cocina…' : 'Ej.: Botas de fútbol Mercurial';
+    $('#f-price-l').textContent = idea ? 'Hasta (precio máximo)' : 'Precio aproximado';
+    $('#f-price').placeholder = idea ? 'Opcional' : '0,00';
   }
 
   function paintImage() {
@@ -1208,6 +1234,7 @@
       case 'edit-budget': S.editBudget = true; renderGifts(); break;
       case 'menu-budget': closeSheet(); S.editBudget = true; if (route().view === 'gifts') renderGifts(); else { location.hash = 'regalos'; } break;
       case 'clear-budget': saveBudget(null); break;
+      case 'kind': F.kind = el.dataset.k; applyKind(); if (F.kind === 'idea') $('#f-title').focus(); break;
       case 'prio':
         F.priority = Number(el.dataset.p);
         $$('.prio button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.p) === F.priority)));
@@ -1371,7 +1398,8 @@
       const category = ($('#f-cat').hidden ? F.category : $('#f-cat').value).trim();
       btn.disabled = true; btn.textContent = 'Guardando…';
       try {
-        await api.save(S.session.token, { id: F.id, url: $('#f-url').value.trim() || null, title, price, image: F.image, category, priority: F.priority, notes: $('#f-notes').value });
+        const idea = F.kind === 'idea';
+        await api.save(S.session.token, { id: F.id, kind: F.kind, url: idea ? null : ($('#f-url').value.trim() || null), title, price, image: idea ? null : F.image, category, priority: F.priority, notes: $('#f-notes').value });
         const editing = !!F.id;
         F = null; closeSheet();
         toast(editing ? 'Cambios guardados' : 'Añadido a tu carta');
@@ -1454,7 +1482,7 @@
     });
   })();
 
-  const APP_VERSION = 8;
+  const APP_VERSION = 9;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
