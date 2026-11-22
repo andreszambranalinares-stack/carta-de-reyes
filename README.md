@@ -2,7 +2,8 @@
 
 App web familiar: cada uno escribe su carta de Reyes y el resto reserva en secreto qué va a regalar.
 
-- **Entrada:** código de familia (`Linares`), nombre y PIN de 4 números.
+- **Entrada:** código de familia (guardado cifrado en la base de datos, nunca en este repositorio), nombre y PIN de 4 números.
+  Las personas nuevas quedan pendientes hasta que el administrador las acepta.
 - **Cartas:** cada deseo tiene foto, nombre, precio, prioridad (1–3 estrellas), lista (Tecnología, Libros…) y notas.
 - **Enlace inteligente:** al pegar el enlace de un producto se intentan sacar la foto, el nombre y el precio
   (vía `r.jina.ai` y, si falla, `api.microlink.io`). Tiendas con antibots (Amazon, Decathlon, PcComponentes,
@@ -21,7 +22,8 @@ App web familiar: cada uno escribe su carta de Reyes y el resto reserva en secre
 ## Puesta en marcha
 
 1. Crear un proyecto en [supabase.com](https://supabase.com) (plan gratis, región Europa).
-2. SQL Editor → pegar `supabase/schema.sql` → Run, y después `002_fotos.sql` y `003_regalos.sql` (en ese orden) → Run.
+2. SQL Editor → pegar `supabase/schema.sql` → Run, y después `002_fotos.sql`, `003_regalos.sql` y `004_seguridad.sql` (en ese orden) → Run.
+   Luego poner el código de familia con la línea `insert into rdc_config…` que explica `004_seguridad.sql`.
 3. Project Settings → API: copiar *Project URL* y la clave *anon public* en `config.js`.
 4. Subir la carpeta a un repositorio de GitHub y activar Pages (Settings → Pages → rama `main`, carpeta `/`).
 

@@ -80,10 +80,21 @@
     sesion: 'Tu sesión ha caducado. Entra de nuevo.',
     no_existe: 'Ese deseo ya no existe.',
     propio: 'No puedes regalarte algo a ti mismo.',
+    pendiente: 'Tu cuenta está pendiente de aprobación.',
+    muchos: 'Hay demasiadas solicitudes pendientes. Pide al administrador que las revise.',
+    pin_actual: 'Tu PIN actual no es correcto.',
+    codigo: 'El código tiene que tener al menos 6 caracteres.',
+    admin: 'Solo el administrador puede hacer esto.',
+    importe: 'Esa cantidad no es válida.',
     red: 'No hay conexión. Revisa internet y vuelve a intentarlo.',
   };
-  const errText = (e) => ERR[e && e.code] || ERR.red;
-  class ApiError extends Error { constructor(code) { super(code); this.code = code; } }
+  const hhmm = (iso) => new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const errText = (e) => {
+    if (e && e.code === 'bloqueado' && e.data && e.data.until) return `Demasiados intentos. Vuelve a probar a las ${hhmm(e.data.until)}.`;
+    if (e && e.code === 'pin' && e.data && e.data.left != null && e.data.left <= 2) return `PIN incorrecto. ${e.data.left === 0 ? 'Un fallo más y se bloquea un rato.' : `Te quedan ${e.data.left + 1} intentos.`}`;
+    return ERR[e && e.code] || ERR.red;
+  };
+  class ApiError extends Error { constructor(code, data) { super(code); this.code = code; this.data = data || {}; } }
 
   // ---------------------------------------------------------------- backend Supabase
   async function rpc(fn, args) {
@@ -97,7 +108,7 @@
     } catch { throw new ApiError('red'); }
     if (!res.ok) throw new ApiError('red');
     const data = await res.json();
-    if (data && data.error) throw new ApiError(data.error);
+    if (data && data.error) throw new ApiError(data.error, data);
     return data;
   }
   const remote = {
@@ -115,6 +126,11 @@
     setAmount: (t, id, amount) => rpc('rdc_set_amount', { p_token: t, p_item: id, p_amount: amount }),
     setBudget: (t, amount) => rpc('rdc_set_budget', { p_token: t, p_amount: amount }),
     setPhoto: (t, photo) => rpc('rdc_set_photo', { p_token: t, p_photo: photo }),
+    changePin: (t, oldPin, newPin) => rpc('rdc_change_pin', { p_token: t, p_old: oldPin, p_new: newPin }),
+    logoutAll: (t) => rpc('rdc_logout_all', { p_token: t }),
+    ackFails: (t) => rpc('rdc_ack_fails', { p_token: t }),
+    approve: (t, id, ok) => rpc('rdc_approve', { p_token: t, p_member: id, p_ok: ok }),
+    setFamily: (t, code) => rpc('rdc_set_family', { p_token: t, p_code: code }),
   };
 
   // ---------------------------------------------------------------- backend demo (mismo contrato)
@@ -152,7 +168,7 @@
     const wait = (v) => new Promise((r) => setTimeout(() => r(v), 180));
     const fail = (c) => Promise.reject(new ApiError(c));
     const me = (t) => db.members.find((m) => m.token === t);
-    const fam = (f) => String(f || '').trim().toLowerCase() === 'linares';
+    const fam = (f) => String(f || '').trim().length > 0; // en el modo demo vale cualquier código
     const pub = (m) => ({ id: m.id, name: m.name, color: m.color, photo: m.photo || null });
     const strip = ({ id, owner_id, title, url, image, price, category, priority, notes, created_at }) =>
       ({ id, owner_id, title, url, image, price, category, priority, notes, created_at });
@@ -279,6 +295,16 @@
         try { save(); } catch { return fail('imagen'); }
         return wait({ ok: true });
       },
+      changePin(t, oldPin, newPin) {
+        const u = me(t); if (!u) return fail('sesion');
+        if (u.pin !== oldPin) return fail('pin_actual');
+        if (!/^\d{4}$/.test(newPin)) return fail('pin_formato');
+        u.pin = newPin; u.token = 't' + Math.random(); save(); return wait({ token: u.token });
+      },
+      logoutAll(t) { const u = me(t); if (!u) return fail('sesion'); u.token = 't' + Math.random(); save(); return wait({ token: u.token }); },
+      ackFails: () => wait({ ok: true }),
+      approve: () => wait({ ok: true }),
+      setFamily: () => wait({ ok: true }),
       reset() { db = seed(); save(); },
     };
   })();
@@ -455,8 +481,25 @@
     render();
   }
   function handleErr(e) {
+    if (e && e.code === 'pendiente') return renderPending(e.data.admins);
+    if (e && e.code === 'sesion' && S.session) {
+      // ¿sesión caducada o cuenta todavía sin aceptar?
+      return api.home(S.session.token).then(() => render(), (e2) => (e2.code === 'pendiente' ? renderPending(e2.data.admins) : logout(ERR.sesion)));
+    }
     if (e && e.code === 'sesion') return logout(ERR.sesion);
     toast(errText(e));
+  }
+
+  function renderPending(admins) {
+    S.pendingAdmins = admins || S.pendingAdmins || 'El administrador';
+    app.innerHTML = `${scene(null)}
+      <div class="auth">
+        <div class="auth-face" style="margin-top:-70px">${avatar(S.session, 120, '', true)}<span class="name">${h(S.session.name)}</span></div>
+        <div class="auth-title"><h1 class="display">Casi dentro</h1>
+          <p>${h(S.pendingAdmins)} ${String(S.pendingAdmins).includes(',') ? 'tienen' : 'tiene'} que aceptarte para que veas las cartas de la familia. Así nadie de fuera puede entrar.</p></div>
+        <button class="btn btn-gold btn-block" data-act="check-pending">Comprobar otra vez</button>
+        <button class="link-btn" data-act="logout">No soy yo, salir</button>
+      </div>`;
   }
 
   // ---------------------------------------------------------------- render principal
@@ -513,11 +556,11 @@
           ${demoBanner()}
           ${a.loading ? '<div class="skeleton" style="height:120px"></div>' : `
           <div class="who-grid">
-            ${a.members.map((m) => `<button class="who" data-act="pick" data-id="${h(m.id)}">${avatar(m, 84, '', true)}<span>${h(m.name)}</span></button>`).join('')}
+            ${a.members.map((m) => `<button class="who" data-act="pick" data-id="${h(m.id)}">${avatar(m, 84, '', true)}<span>${h(m.name)}</span>${m.approved === false ? '<small class="muted">pendiente</small>' : ''}</button>`).join('')}
             <button class="who" data-act="new"><span class="avatar" style="--s:84px;--c:var(--m0);border-style:dashed;font-family:var(--font-ui);font-size:34px;color:var(--gold)" aria-hidden="true">+</span><span>Soy nuevo</span></button>
           </div>`}
           <p class="error-msg">${h(a.error)}</p>
-          <button class="link-btn" data-act="change-family">Cambiar código de familia</button>
+          <button class="link-btn" data-act="reset-family">Cambiar código de familia</button>
         </div>`;
     } else if (a.step === 'pin') {
       const m = a.members.find((x) => x.id === a.pick) || {};
@@ -680,6 +723,17 @@
             <span class="sub">${d ? (d.me.count ? plural(d.me.count, 'deseo', 'deseos') : 'Aún vacía: añade tu primer deseo') : '…'}</span></span>
           <span class="chev">${I.chev}</span>
         </button>
+        ${d && d.me.fails > 0 ? `<section class="alert-card" role="alert">${I.alert}<div class="grow">
+            <b>Alguien ha fallado tu PIN ${plural(d.me.fails, 'vez', 'veces')}.</b>
+            <span>Si no has sido tú, cámbialo para que nadie entre en tu cuenta.</span>
+            <div class="row"><button class="btn btn-gold btn-sm" data-act="change-pin">Cambiar PIN</button><button class="btn btn-ghost btn-sm" data-act="ack-fails">He sido yo</button></div></div>
+          </section>` : ''}
+        ${d && d.pending && d.pending.length ? `<section class="requests" aria-label="Solicitudes para entrar">
+          <p class="eyebrow">${I.users}Quieren entrar en la familia</p>
+          ${d.pending.map((p) => `<div class="request-row">${avatar(p, 42, '', true)}<span class="grow"><b>${h(p.name)}</b><span class="muted">se ha registrado</span></span>
+            <button class="btn btn-gold btn-sm" data-act="approve" data-id="${h(p.id)}">Aceptar</button>
+            <button class="btn btn-ghost btn-sm" data-act="reject" data-id="${h(p.id)}" aria-label="Rechazar a ${h(p.name)}">${I.close}</button></div>`).join('')}
+        </section>` : ''}
         ${news.length ? `<section class="news" aria-label="Novedades">
           <p class="eyebrow">${I.spark}Novedades desde tu última visita</p>
           ${news.map((m) => `<button class="news-row" data-act="open-list" data-id="${h(m.id)}">${avatar(m, 38, '', true)}
@@ -694,7 +748,7 @@
               <span class="name">${h(m.name)}</span>
               <span class="meta">${m.count ? plural(m.count, 'deseo', 'deseos') : 'Sin deseos aún'}${m.mine ? `<br><b>regalas ${m.mine}</b>` : ''}</span>
             </button>`).join('')}</div>`
-          : `<div class="empty"><span class="display">Aún estás solo</span><p>Pasa el enlace y el código <b>Linares</b> al resto de la familia para que creen su carta.</p></div>`}
+          : `<div class="empty"><span class="display">Aún estás solo</span><p>Pasa el enlace y el código de la familia al resto para que creen su carta.</p></div>`}
         ${d ? `<button class="wide-card" data-act="gifts">${I.gift}<span class="grow"><strong>Lo que regalo yo</strong>
           <span class="muted">${d.gifts ? plural(d.gifts, 'regalo apuntado', 'regalos apuntados') : 'Todavía no has elegido ningún regalo'}</span>
           <span class="budget-chip">${I.wallet}${S.budget ? `Presupuesto: ${h(eur(S.budget))} por persona` : 'Ponte un presupuesto por persona'}</span></span><span class="chev">${I.chev}</span></button>` : ''}
@@ -1055,10 +1109,39 @@
       <div class="menu-list">
         <button class="btn btn-ghost btn-block" data-act="menu-budget">${I.wallet}${S.budget ? `Presupuesto: ${h(eur(S.budget))} por persona` : 'Ponerme un presupuesto'}</button>
         ${DEMO ? '<button class="btn btn-ghost btn-block" data-act="demo-reset">Restablecer datos de ejemplo</button>' : ''}
+        <button class="btn btn-ghost btn-block" data-act="change-pin">${I.lock}Cambiar mi PIN</button>
+        ${S.home && S.home.me && S.home.me.admin ? `<button class="btn btn-ghost btn-block" data-act="change-family">${I.users}Cambiar código de familia</button>` : ''}
+        <button class="btn btn-ghost btn-block" data-act="ask-logout-all">Cerrar sesión en todos mis móviles</button>
+        <div class="confirm-box" id="confirm-logout-all" hidden><p>Se cerrará tu sesión en cualquier otro móvil donde hayas entrado. En este seguirás dentro.</p>
+          <div class="row" style="flex-wrap:nowrap"><button class="btn btn-ghost btn-sm" style="flex:1" data-act="cancel-logout-all">Cancelar</button><button class="btn btn-danger btn-sm" style="flex:1" data-act="logout-all">Cerrar en los demás</button></div></div>
         <button class="btn btn-danger btn-block" data-act="logout">Cerrar sesión</button>
       </div>
       <p class="muted" style="font-size:.85rem;margin:16px 0 0">Para entrar en otro móvil necesitas el código de familia, tu nombre y tu PIN.</p>`, 'Menú');
   }
+  function openPinForm() {
+    const pinInput = (id, label) => `<div class="field"><label for="${id}">${label}</label>
+      <input class="input pin-input tnum" id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"></div>`;
+    openSheet(`${sheetHead('Seguridad', 'Cambiar mi PIN')}
+      <form class="stack" data-form="change-pin" novalidate>
+        ${pinInput('f-pin-old', 'Tu PIN actual')}${pinInput('f-pin-new', 'PIN nuevo (4 números)')}${pinInput('f-pin-new2', 'Repite el PIN nuevo')}
+        <p class="secret-note">${I.lock}<span>Al cambiarlo se cerrará tu sesión en los demás móviles.</span></p>
+        <p class="error-msg" id="pin-form-error"></p>
+        <button class="btn btn-gold btn-block" type="submit">Guardar PIN nuevo</button>
+      </form>`, 'Cambiar mi PIN');
+    setTimeout(() => $('#f-pin-old').focus(), 80);
+  }
+  function openFamilyForm() {
+    openSheet(`${sheetHead('Administrador', 'Código de familia')}
+      <form class="stack" data-form="family" novalidate>
+        <div class="field"><label for="f-family">Código nuevo</label>
+          <input class="input" id="f-family" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Al menos 6 letras o números"></div>
+        <p class="secret-note">${I.info}<span>Quien ya ha entrado no tendrá que escribirlo otra vez. Las personas nuevas necesitarán el código nuevo, y tú tendrás que aceptarlas.</span></p>
+        <p class="error-msg" id="family-form-error"></p>
+        <button class="btn btn-gold btn-block" type="submit">Guardar código</button>
+      </form>`, 'Código de familia');
+    setTimeout(() => $('#f-family').focus(), 80);
+  }
+
   // ---------------------------------------------------------------- eventos
   document.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
@@ -1072,9 +1155,27 @@
       case 'back-who': S.auth.step = 'who'; S.auth.error = ''; resetPins(); renderAuth(); break;
       case 'key': pinPress(el.dataset.k); break;
       case 'pin-focus': if (S.auth.step === 'new') { S.pin.active = el.dataset.pin; paintPins(); } break;
-      case 'change-family': ls.del(K.family); S.family = null; S.auth = { step: 'code', members: [], error: '' }; renderAuth(); break;
+      case 'reset-family': ls.del(K.family); S.family = null; S.auth = { step: 'code', members: [], error: '' }; renderAuth(); break;
       case 'menu': openMenu(); break;
       case 'logout': logout(); break;
+      case 'check-pending': el.disabled = true; S.home = null; render(); break;
+      case 'ack-fails': try { await api.ackFails(S.session.token); S.home.me.fails = 0; render(); } catch (err) { handleErr(err); } break;
+      case 'approve': case 'reject': {
+        if (act === 'reject' && el.dataset.sure !== '1') { el.dataset.sure = '1'; el.textContent = 'Rechazar'; el.classList.add('btn-danger'); break; }
+        el.disabled = true;
+        try { await api.approve(S.session.token, id, act === 'approve'); toast(act === 'approve' ? 'Aceptado en la familia' : 'Solicitud rechazada'); S.home = null; render(); }
+        catch (err) { el.disabled = false; handleErr(err); }
+        break;
+      }
+      case 'change-pin': openPinForm(); break;
+      case 'change-family': openFamilyForm(); break;
+      case 'ask-logout-all': $('#confirm-logout-all').hidden = false; break;
+      case 'cancel-logout-all': $('#confirm-logout-all').hidden = true; break;
+      case 'logout-all':
+        el.disabled = true;
+        try { const r = await api.logoutAll(S.session.token); S.session.token = r.token; ls.set(K.session, S.session); closeSheet(); toast('Sesión cerrada en tus otros móviles'); }
+        catch (err) { el.disabled = false; handleErr(err); }
+        break;
       case 'demo-reset': demo.reset(); S.home = null; S.items = {}; S.gifts = null; closeSheet(); toast('Datos de ejemplo restablecidos'); logout(); break;
       case 'open-list': go(id === S.session.id ? 'mia' : 'lista-' + id); break;
       case 'home': go(''); break;
@@ -1203,6 +1304,27 @@
     const showErr = (msg) => { const p = $('.error-msg', form); if (p) p.textContent = msg; };
     // errores del PIN: se repinta la pantalla con el aviso y se agita la casilla afectada
     const pinErr = (msg, shake = 'pin') => { S.auth.error = msg; renderAuth(); shakePins(shake); };
+    if (kind === 'change-pin') {
+      const o = $('#f-pin-old').value, n = $('#f-pin-new').value, n2 = $('#f-pin-new2').value, err = $('#pin-form-error');
+      if (!/^\d{4}$/.test(o) || !/^\d{4}$/.test(n)) { err.textContent = ERR.pin_formato; return; }
+      if (n !== n2) { err.textContent = 'Los dos PIN nuevos no coinciden.'; return; }
+      btn.disabled = true;
+      try {
+        const r = await api.changePin(S.session.token, o, n);
+        S.session.token = r.token; ls.set(K.session, S.session);
+        if (S.home) S.home.me.fails = 0;
+        closeSheet(); toast('PIN cambiado'); render();
+      } catch (e2) { btn.disabled = false; err.textContent = errText(e2); }
+      return;
+    }
+    if (kind === 'family') {
+      const code = $('#f-family').value.trim(), err = $('#family-form-error');
+      if (code.replace(/\s/g, '').length < 6) { err.textContent = ERR.codigo; return; }
+      btn.disabled = true;
+      try { await api.setFamily(S.session.token, code); S.family = code; ls.set(K.family, code); closeSheet(); toast('Código de familia cambiado'); }
+      catch (e2) { btn.disabled = false; err.textContent = errText(e2); }
+      return;
+    }
     if (kind === 'budget') {
       const raw = $('#f-budget').value.trim();
       if (!raw) return saveBudget(null);
@@ -1239,7 +1361,7 @@
       if (pin.length !== 4) { S.pin.active = 'pin'; return pinErr(ERR.pin_formato, 'pin'); }
       if (pin !== pin2) { S.pin.pin2 = ''; S.pin.active = 'pin2'; return pinErr('Los dos PIN no coinciden.', 'pin2'); }
       btn.disabled = true;
-      try { startSession(await api.register(S.family, name, pin)); toast(`¡Bienvenido, ${name}!`); }
+      try { const r = await api.register(S.family, name, pin); startSession(r); if (!r.pending) toast(`¡Bienvenido, ${name}!`); }
       catch (err) { pinErr(errText(err), ''); }
     }
     if (kind === 'item') {
@@ -1332,7 +1454,7 @@
     });
   })();
 
-  const APP_VERSION = 7;
+  const APP_VERSION = 8;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });

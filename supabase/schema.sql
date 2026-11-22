@@ -44,8 +44,15 @@ revoke all on public.rdc_members, public.rdc_items, public.rdc_reservations from
 
 -- ---------- helpers (no expuestos) ----------
 
+-- El código de familia nunca se escribe aquí: se guarda cifrado en rdc_config (ver 004_seguridad.sql).
+create table if not exists public.rdc_config (key text primary key, value text not null);
+alter table public.rdc_config enable row level security;
+revoke all on public.rdc_config from anon, authenticated;
 create or replace function public.rdc_family_ok(p_family text) returns boolean
-language sql immutable as $$ select lower(trim(coalesce(p_family,''))) = 'linares' $$;
+language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from rdc_config where key = 'family'
+    and value = crypt(lower(regexp_replace(coalesce(p_family, ''), '\s', '', 'g')), value))
+$$;
 
 create or replace function public.rdc_me(p_token uuid) returns public.rdc_members
 language sql stable security definer set search_path = public as $$
