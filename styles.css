@@ -502,3 +502,6 @@ button.hero-card { cursor: pointer; }
 .meter span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--gold), var(--gold-2)); }
 .meter.over span { background: var(--danger); }
 .gift-group .budget-line { margin: -4px 0 12px; }
+.budget-chip { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: .84rem; color: var(--gold); font-weight: 600; }
+.budget-chip svg { width: 16px; height: 16px; }
+.wide-card .grow { display: grid; }

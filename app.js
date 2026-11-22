@@ -696,7 +696,8 @@
             </button>`).join('')}</div>`
           : `<div class="empty"><span class="display">Aún estás solo</span><p>Pasa el enlace y el código <b>Linares</b> al resto de la familia para que creen su carta.</p></div>`}
         ${d ? `<button class="wide-card" data-act="gifts">${I.gift}<span class="grow"><strong>Lo que regalo yo</strong>
-          <span class="muted">${d.gifts ? plural(d.gifts, 'regalo apuntado', 'regalos apuntados') : 'Todavía no has elegido ningún regalo'}</span></span><span class="chev">${I.chev}</span></button>` : ''}
+          <span class="muted">${d.gifts ? plural(d.gifts, 'regalo apuntado', 'regalos apuntados') : 'Todavía no has elegido ningún regalo'}</span>
+          <span class="budget-chip">${I.wallet}${S.budget ? `Presupuesto: ${h(eur(S.budget))} por persona` : 'Ponte un presupuesto por persona'}</span></span><span class="chev">${I.chev}</span></button>` : ''}
         <button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>`;
     };
     paint();
@@ -1052,6 +1053,7 @@
         <input type="file" id="f-avatar" accept="image/*" hidden>
       </div>
       <div class="menu-list">
+        <button class="btn btn-ghost btn-block" data-act="menu-budget">${I.wallet}${S.budget ? `Presupuesto: ${h(eur(S.budget))} por persona` : 'Ponerme un presupuesto'}</button>
         ${DEMO ? '<button class="btn btn-ghost btn-block" data-act="demo-reset">Restablecer datos de ejemplo</button>' : ''}
         <button class="btn btn-danger btn-block" data-act="logout">Cerrar sesión</button>
       </div>
@@ -1103,6 +1105,7 @@
         }
         break;
       case 'edit-budget': S.editBudget = true; renderGifts(); break;
+      case 'menu-budget': closeSheet(); S.editBudget = true; if (route().view === 'gifts') renderGifts(); else { location.hash = 'regalos'; } break;
       case 'clear-budget': saveBudget(null); break;
       case 'prio':
         F.priority = Number(el.dataset.p);
@@ -1266,7 +1269,7 @@
     }
   });
   window.addEventListener('hashchange', () => {
-    closeSheet(); F = null; S.editBudget = false; window.scrollTo({ top: 0 });
+    closeSheet(); F = null; if (route().view !== 'gifts') S.editBudget = false; window.scrollTo({ top: 0 });
     const r = route(); if (r.view !== 'list' || r.owner !== S.viewing) S.viewing = null;
     render();
   });
@@ -1274,6 +1277,21 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.session && !sheetRoot.innerHTML) { S.home = null; refreshCurrent(); } });
 
   function refreshCurrent() { render(); }
+
+  const APP_VERSION = 6;
+  async function checkUpdate() {
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const { v } = await r.json();
+      if (!(v > APP_VERSION)) return;
+      if (sessionStorage.getItem('rdc.reloaded') === String(v)) return; // evita bucles si la caché aún sirve lo viejo
+      sessionStorage.setItem('rdc.reloaded', String(v));
+      location.replace(location.pathname + '?v=' + v + location.hash);
+    } catch { /* sin conexión o sin version.json (modo demo) */ }
+  }
+  checkUpdate();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
 
   try { localStorage.removeItem(K.theme); } catch { /* tema único */ }
   render();
