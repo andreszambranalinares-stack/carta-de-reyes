@@ -53,6 +53,7 @@
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/></svg>',
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>',
     send: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 20l18-8L3 4l2 7 9 1-9 1z"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 20a2 2 0 004 0"/></svg>',
     spark: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>',
     del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 001-1V6a1 1 0 00-1-1z"/><path d="M17 9l-5 6M12 9l5 6"/></svg>',
   };
@@ -153,6 +154,8 @@
     albumPhoto: (t, id) => rpc('rdc_album_photo', { p_token: t, p_id: id }),
     albumAdd: (t, thumb, photo, caption) => rpc('rdc_album_add', { p_token: t, p_thumb: thumb, p_photo: photo, p_caption: caption }),
     albumDelete: (t, id) => rpc('rdc_album_delete', { p_token: t, p_id: id }),
+    pushSubscribe: (t, sub) => rpc('rdc_push_subscribe', { p_token: t, p_sub: sub }),
+    pushUnsubscribe: (endpoint) => rpc('rdc_push_unsubscribe', { p_endpoint: endpoint }),
   };
 
   // ---------------------------------------------------------------- backend demo (mismo contrato)
@@ -369,6 +372,8 @@
         return wait({ ok: true });
       },
       albumDelete(t, id) { const u = me(t); if (!u) return fail('sesion'); db.album = (db.album || []).filter((a) => !(a.id === id && a.member_id === u.id)); save(); return wait({ ok: true }); },
+      pushSubscribe: () => wait({ ok: true }),
+      pushUnsubscribe: () => wait({ ok: true }),
       reset() { db = seed(); save(); },
     };
   })();
@@ -557,6 +562,10 @@
   const go = (hash) => { if (location.hash.replace(/^#/, '') === hash) render(); else location.hash = hash; };
 
   function logout(msg) {
+    if (S.session && ls.get(`rdc.push.${S.session.id}`)) {
+      const ep = ls.get(`rdc.push.${S.session.id}`); ls.del(`rdc.push.${S.session.id}`);
+      api.pushUnsubscribe(ep).catch(() => null);
+    }
     ls.del(K.session); S.session = null; S.home = null; S.items = {}; S.gifts = null; S.budget = null; S.viewing = null;
     S.auth = { step: S.family ? 'who' : 'code', members: [], pick: null, error: msg || '' };
     closeSheet();
@@ -818,6 +827,7 @@
             <button class="btn btn-gold btn-sm" data-act="approve" data-id="${h(p.id)}">Aceptar</button>
             <button class="btn btn-ghost btn-sm" data-act="reject" data-id="${h(p.id)}" aria-label="Rechazar a ${h(p.name)}">${I.close}</button></div>`).join('')}
         </section>` : ''}
+        ${d ? pushCard() : ''}
         ${news.length ? `<section class="news" aria-label="Novedades">
           <p class="eyebrow">${I.spark}Novedades desde tu última visita</p>
           ${news.map((m) => `<button class="news-row" data-act="open-list" data-id="${h(m.id)}">${avatar(m, 38, '', true)}
@@ -1330,6 +1340,9 @@
         <button class="btn btn-ghost btn-block" data-act="menu-budget">${I.wallet}${S.budget ? `Presupuesto: ${h(eur(S.budget))} por persona` : 'Ponerme un presupuesto'}</button>
         ${DEMO ? '<button class="btn btn-ghost btn-block" data-act="demo-reset">Restablecer datos de ejemplo</button>' : ''}
         <button class="btn btn-ghost btn-block" data-act="prefs" data-id="${h(S.session.id)}">${I.tag}Mis tallas y gustos</button>
+        ${(() => { const st = pushState(); if (st === 'off') return '';
+          return st === 'on' ? `<button class="btn btn-ghost btn-block" data-act="push-off">${I.bell}Avisos: activados · desactivar</button>`
+            : `<button class="btn btn-ghost btn-block" data-act="push-on">${I.bell}${st === 'denied' ? 'Avisos bloqueados en Ajustes' : st === 'unsupported' ? 'Este navegador no admite avisos' : 'Activar avisos en este móvil'}</button>`; })()}
         <button class="btn btn-ghost btn-block" data-act="toggle-sound">${soundOn() ? 'Sonidos y vibración: activados' : 'Sonidos y vibración: desactivados'}</button>
         <button class="btn btn-ghost btn-block" data-act="change-pin">${I.lock}Cambiar mi PIN</button>
         ${S.home && S.home.me && S.home.me.admin ? `<button class="btn btn-ghost btn-block" data-act="change-family">${I.users}Cambiar código de familia</button>` : ''}
@@ -1340,6 +1353,76 @@
       </div>
       <p class="muted" style="font-size:.85rem;margin:16px 0 0">Para entrar en otro móvil necesitas el código de familia, tu nombre y tu PIN.</p>`, 'Menú');
   }
+  // ---------- notificaciones (web push)
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  function pushState() {
+    if (DEMO || !CFG.vapidPublicKey) return 'off';
+    if (!pushSupported()) return isIOS && !isStandalone() ? 'install' : 'unsupported';
+    if (Notification.permission === 'denied') return 'denied';
+    if (Notification.permission === 'granted' && ls.get(`rdc.push.${S.session.id}`)) return 'on';
+    return 'ask';
+  }
+  const b64ToBytes = (b64) => { const p = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); };
+  let swReg = null;
+  async function getSW() {
+    if (swReg) return swReg;
+    swReg = await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    return swReg;
+  }
+  async function enablePush() {
+    const st = pushState();
+    if (st === 'install') return openInstallHelp();
+    if (st === 'unsupported') return toast('Este navegador no admite avisos. Prueba con Chrome o Safari actualizados.');
+    if (st === 'denied') return toast('Tienes los avisos bloqueados. Actívalos en Ajustes del móvil para esta app.');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast('Sin permiso no puedo avisarte.'); return; }
+      const reg = await getSW();
+      const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) });
+      await api.pushSubscribe(S.session.token, sub.toJSON());
+      ls.set(`rdc.push.${S.session.id}`, sub.endpoint);
+      chime('done'); toast('¡Avisos activados!');
+      closeSheet(); render();
+    } catch (e) { handleErr(e && e.code ? e : { code: 'red' }); }
+  }
+  async function disablePush() {
+    try {
+      const reg = await getSW(); const sub = await reg.pushManager.getSubscription();
+      if (sub) { try { await api.pushUnsubscribe(sub.endpoint); } catch { /* da igual */ } await sub.unsubscribe(); }
+    } catch { /* nada */ }
+    ls.del(`rdc.push.${S.session.id}`); toast('Avisos desactivados'); openMenu();
+  }
+  // si ya estaban activados, se renueva la suscripción en silencio (por si cambió)
+  async function refreshPush() {
+    if (pushState() !== 'on') return;
+    try {
+      const reg = await getSW(); let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) });
+      await api.pushSubscribe(S.session.token, sub.toJSON());
+    } catch { /* se reintenta otro día */ }
+  }
+  function openInstallHelp() {
+    openSheet(`${sheetHead('Avisos en iPhone', 'Primero, instálala')}
+      <ol class="steps">
+        <li>Abre esta página en <b>Safari</b>.</li>
+        <li>Toca el botón <b>Compartir</b> (el cuadrado con la flecha hacia arriba).</li>
+        <li>Elige <b>«Añadir a pantalla de inicio»</b> y luego <b>Añadir</b>.</li>
+        <li>Abre la Carta de Reyes desde el <b>icono</b> nuevo y vuelve a tocar «Activar avisos».</li>
+      </ol>
+      <p class="secret-note">${I.info}<span>Apple solo permite avisos a las webs instaladas en la pantalla de inicio (iOS 16.4 o posterior).</span></p>`, 'Cómo activar avisos en iPhone');
+  }
+  const pushCard = () => {
+    const st = pushState();
+    if (st === 'on' || st === 'off' || st === 'unsupported' || ls.get(`rdc.pushask.${S.session.id}`) === 'no') return '';
+    return `<section class="push-card">${I.bell}<div class="grow"><b>¿Te avisamos?</b>
+        <span>Cuando alguien pida algo nuevo, te proponga regalar a medias o te escriba en un regalo.</span>
+        <div class="row"><button class="btn btn-gold btn-sm" data-act="push-on">${st === 'install' ? 'Cómo activarlos' : 'Activar avisos'}</button>
+        <button class="btn btn-ghost btn-sm" data-act="push-later">Ahora no</button></div></div></section>`;
+  };
+
   // ---------- tallas y gustos
   const PREFS = [
     ['top', 'Camiseta / jersey', 'Ej.: M'], ['bottom', 'Pantalón', 'Ej.: 40 o 30/32'], ['shoes', 'Calzado', 'Ej.: 43'],
@@ -1495,6 +1578,9 @@
       case 'cat': { const r = route(); S.cat[r.owner] = el.dataset.cat; renderList(r.owner); window.scrollTo({ top: 0 }); break; }
       case 'item': if (!S.reorder) openDetail(id); break;
       case 'prefs': openPrefs(id); break;
+      case 'push-on': enablePush(); break;
+      case 'push-off': disablePush(); break;
+      case 'push-later': ls.set(`rdc.pushask.${S.session.id}`, 'no'); render(); break;
       case 'album': go('album'); break;
       case 'album-file': $('#f-album').click(); break;
       case 'album-camera': $('#f-album-cam').click(); break;
@@ -1831,7 +1917,7 @@
     });
   })();
 
-  const APP_VERSION = 13;
+  const APP_VERSION = 14;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -1844,6 +1930,7 @@
     } catch { /* sin conexión o sin version.json (modo demo) */ }
   }
   checkUpdate();
+  if (S.session) setTimeout(refreshPush, 3000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
 
   try { localStorage.removeItem(K.theme); } catch { /* tema único */ }

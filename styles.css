@@ -666,3 +666,13 @@ html { overscroll-behavior-y: none; }
 .album-full img { width: 100%; max-height: 66dvh; object-fit: contain; border-radius: var(--r-md); background: #000; }
 .album-full figcaption { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); }
 .album-full figcaption b { color: var(--fg); }
+
+/* ---------- avisos ---------- */
+.push-card {
+  display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; padding: 14px 16px; border-radius: var(--r-md);
+  background: linear-gradient(120deg, var(--gold-soft), var(--surface) 70%); border: 1px solid color-mix(in srgb, var(--gold) 40%, var(--line));
+}
+.push-card > svg { width: 26px; height: 26px; color: var(--gold); flex: none; margin-top: 2px; }
+.push-card .grow { display: grid; gap: 6px; min-width: 0; }
+.push-card .grow > span { color: var(--muted); font-size: .92rem; }
+.steps { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 10px; line-height: 1.45; }
