@@ -149,6 +149,10 @@
     setPrefs: (t, prefs) => rpc('rdc_set_prefs', { p_token: t, p_prefs: prefs }),
     messages: (t, id) => rpc('rdc_messages', { p_token: t, p_item: id }),
     sendMessage: (t, id, body) => rpc('rdc_send_message', { p_token: t, p_item: id, p_body: body }),
+    album: (t) => rpc('rdc_album_list', { p_token: t }),
+    albumPhoto: (t, id) => rpc('rdc_album_photo', { p_token: t, p_id: id }),
+    albumAdd: (t, thumb, photo, caption) => rpc('rdc_album_add', { p_token: t, p_thumb: thumb, p_photo: photo, p_caption: caption }),
+    albumDelete: (t, id) => rpc('rdc_album_delete', { p_token: t, p_id: id }),
   };
 
   // ---------------------------------------------------------------- backend demo (mismo contrato)
@@ -353,6 +357,18 @@
         db.messages = db.messages || {}; (db.messages[id] = db.messages[id] || []).push({ id: Date.now(), member_id: u.id, body: String(body).slice(0, 500), created_at: new Date().toISOString() });
         g.last_msg_at = new Date().toISOString(); g.last_msg_by = u.id; save(); return wait({ ok: true });
       },
+      album(t) {
+        const u = me(t); if (!u) return fail('sesion');
+        return wait({ photos: (db.album || []).map((a) => { const m = db.members.find((x) => x.id === a.member_id) || {}; return { id: a.id, member_id: a.member_id, name: m.name, color: m.color, avatar: m.photo || null, thumb: a.thumb, caption: a.caption, created_at: a.created_at }; }) });
+      },
+      albumPhoto(t, id) { const a = (db.album || []).find((x) => x.id === id); return a ? wait({ photo: a.photo }) : fail('no_existe'); },
+      albumAdd(t, thumb, photo, caption) {
+        const u = me(t); if (!u) return fail('sesion');
+        db.album = db.album || []; db.album.unshift({ id: 'a' + Date.now(), member_id: u.id, thumb, photo, caption, created_at: new Date().toISOString() });
+        try { save(); } catch { db.album.shift(); return fail('imagen'); }
+        return wait({ ok: true });
+      },
+      albumDelete(t, id) { const u = me(t); if (!u) return fail('sesion'); db.album = (db.album || []).filter((a) => !(a.id === id && a.member_id === u.id)); save(); return wait({ ok: true }); },
       reset() { db = seed(); save(); },
     };
   })();
@@ -479,6 +495,24 @@
     });
   }
 
+  function resizeImage(blob, max, quality, square) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        let sx = 0, sy = 0, sw = img.width, sh = img.height;
+        if (square) { const side = Math.min(sw, sh); sx = (sw - side) / 2; sy = (sh - side) / 2; sw = sh = side; }
+        const k = Math.min(1, max / Math.max(sw, sh));
+        const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+        const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+        x.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+      img.src = url;
+    });
+  }
+
   // foto de perfil: recorte cuadrado centrado de 256px
   function compressAvatar(blob) {
     return new Promise((resolve, reject) => {
@@ -507,7 +541,7 @@
     gifts: null,
     cat: {},         // ownerId -> categoría elegida
     budget: null,    // presupuesto por persona
-    viewing: null, since: null, editBudget: false, reorder: false,
+    viewing: null, since: null, editBudget: false, reorder: false, album: null,
     auth: { step: 'code', members: [], pick: null, error: '' },
   };
 
@@ -517,6 +551,7 @@
     if (hsh === 'mia') return { view: 'list', owner: S.session.id };
     if (hsh.startsWith('lista-')) return { view: 'list', owner: hsh.slice(6) };
     if (hsh === 'regalos') return { view: 'gifts' };
+    if (hsh === 'album') return { view: 'album' };
     return { view: 'home' };
   }
   const go = (hash) => { if (location.hash.replace(/^#/, '') === hash) render(); else location.hash = hash; };
@@ -558,6 +593,7 @@
     if (r.view === 'home') return renderHome();
     if (r.view === 'list') return renderList(r.owner);
     if (r.view === 'gifts') return renderGifts();
+    if (r.view === 'album') return renderAlbum();
   }
 
   const demoBanner = () => DEMO ? `<div class="demo-banner">${I.info}<span><b>Modo demo.</b> Datos de ejemplo guardados solo en este dispositivo.</span></div>` : '';
@@ -800,6 +836,8 @@
         ${d ? `<button class="wide-card" data-act="gifts">${I.gift}<span class="grow"><strong>Lo que regalo yo</strong>
           <span class="muted">${d.gifts ? plural(d.gifts, 'regalo apuntado', 'regalos apuntados') : 'Todavía no has elegido ningún regalo'}</span>
           <span class="budget-chip">${I.wallet}${S.budget ? `Presupuesto: ${h(eur(S.budget))} por persona` : 'Ponte un presupuesto por persona'}</span></span><span class="chev">${I.chev}</span></button>` : ''}
+        ${d ? `<button class="wide-card" data-act="album">${I.image}<span class="grow"><strong>Álbum de Reyes</strong>
+          <span class="muted">Las fotos de la familia con sus regalos</span></span><span class="chev">${I.chev}</span></button>` : ''}
         <button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>`;
     };
     paint();
@@ -946,6 +984,58 @@
       S.gifts = r.items || []; S.budget = r.budget != null ? Number(r.budget) : null;
       if (route().view === 'gifts') paint();
     } catch (e) { handleErr(e); }
+  }
+
+  // ---------- álbum de Reyes
+  async function renderAlbum() {
+    const paint = () => {
+      const photos = S.album;
+      app.innerHTML = `
+        ${topbar('home')}
+        <div class="hero-card">${KINGS}
+          <div class="grow"><p class="eyebrow">Para el recuerdo</p><h1 class="display">Álbum de Reyes</h1>
+            <span class="sub">${photos ? (photos.length ? plural(photos.length, 'foto', 'fotos') : 'Aún sin fotos') : '…'}</span></div>
+        </div>
+        <div class="list-tools">
+          <button class="tool-btn" data-act="album-camera">${I.camera}Hacer foto</button>
+          <button class="tool-btn" data-act="album-file">${I.image}Subir de mis fotos</button>
+        </div>
+        <input type="file" id="f-album" accept="image/*" hidden>
+        <input type="file" id="f-album-cam" accept="image/*" capture="environment" hidden>
+        ${!photos ? '<div class="album-grid" style="margin-top:16px">' + '<div class="skeleton" style="aspect-ratio:1"></div>'.repeat(6) + '</div>'
+          : !photos.length ? `<div class="empty" style="margin-top:18px"><span class="display">El álbum está vacío</span><p>El 6 de enero, subid una foto con vuestro regalo. Quedará aquí para siempre.</p></div>`
+          : `<div class="album-grid">${photos.map((p) => `<button class="album-thumb" data-act="album-open" data-id="${h(p.id)}" aria-label="Foto de ${h(p.name)}${p.caption ? ': ' + h(p.caption) : ''}"><img src="${h(p.thumb)}" alt="" loading="lazy"></button>`).join('')}</div>`}`;
+    };
+    paint();
+    try { S.album = (await api.album(S.session.token)).photos || []; if (route().view === 'album') paint(); } catch (e) { handleErr(e); }
+  }
+
+  let albumDraft = null;
+  async function startAlbumUpload(file) {
+    try {
+      albumDraft = { thumb: await resizeImage(file, 360, 0.72, true), photo: await resizeImage(file, 1280, 0.78, false) };
+    } catch { toast('No he podido leer esa foto.'); return; }
+    openSheet(`${sheetHead('Álbum', 'Nueva foto')}
+      <form class="stack" data-form="album" novalidate>
+        <img class="album-preview" src="${h(albumDraft.photo)}" alt="Vista previa">
+        <div class="field"><label for="f-caption">Pie de foto (opcional)</label>
+          <input class="input" id="f-caption" maxlength="200" placeholder="Ej.: ¡Por fin mis botas!"></div>
+        <button class="btn btn-gold btn-block" type="submit">Publicar en el álbum</button>
+      </form>`, 'Nueva foto');
+  }
+
+  async function openAlbumPhoto(id) {
+    const p = (S.album || []).find((x) => x.id === id); if (!p) return;
+    const canDelete = p.member_id === S.session.id || (S.home && S.home.me && S.home.me.admin);
+    openSheet(`${sheetHead(new Date(p.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }), '')}
+      <figure class="album-full">
+        <img id="album-big" src="${h(p.thumb)}" alt="${h(p.caption || 'Foto de ' + p.name)}">
+        <figcaption>${avatar({ name: p.name, color: p.color, photo: p.avatar }, 32, '', true)}<span><b>${h(p.name)}</b>${p.caption ? `<br>${h(p.caption)}` : ''}</span></figcaption>
+      </figure>
+      ${canDelete ? `<button class="btn btn-ghost btn-block" data-act="album-ask-delete">${I.trash}Borrar foto</button>
+        <div class="confirm-box" id="confirm-album" hidden><p>¿Borrar esta foto del álbum? No se puede deshacer.</p>
+          <div class="row" style="flex-wrap:nowrap"><button class="btn btn-ghost btn-sm" style="flex:1" data-act="album-cancel-delete">Cancelar</button><button class="btn btn-danger btn-sm" style="flex:1" data-act="album-delete" data-id="${h(p.id)}">Sí, borrar</button></div></div>` : ''}`, 'Foto del álbum');
+    try { const r = await api.albumPhoto(S.session.token, id); const big = $('#album-big'); if (big) big.src = r.photo; } catch { /* se queda la miniatura */ }
   }
 
   // ---------------------------------------------------------------- hojas
@@ -1405,6 +1495,17 @@
       case 'cat': { const r = route(); S.cat[r.owner] = el.dataset.cat; renderList(r.owner); window.scrollTo({ top: 0 }); break; }
       case 'item': if (!S.reorder) openDetail(id); break;
       case 'prefs': openPrefs(id); break;
+      case 'album': go('album'); break;
+      case 'album-file': $('#f-album').click(); break;
+      case 'album-camera': $('#f-album-cam').click(); break;
+      case 'album-open': openAlbumPhoto(id); break;
+      case 'album-ask-delete': $('#confirm-album').hidden = false; el.hidden = true; break;
+      case 'album-cancel-delete': $('#confirm-album').hidden = true; $('[data-act="album-ask-delete"]').hidden = false; break;
+      case 'album-delete':
+        el.disabled = true;
+        try { await api.albumDelete(S.session.token, id); closeSheet(); toast('Foto borrada'); S.album = null; renderAlbum(); }
+        catch (err) { el.disabled = false; handleErr(err); }
+        break;
       case 'reorder': S.reorder = true; renderList(S.session.id); break;
       case 'reorder-done': await saveOrder(); break;
       case 'status': {
@@ -1500,6 +1601,7 @@
   });
 
   document.addEventListener('change', (e) => {
+    if ((e.target.id === 'f-album' || e.target.id === 'f-album-cam') && e.target.files[0]) { const f = e.target.files[0]; e.target.value = ''; startAlbumUpload(f); }
     if ((e.target.id === 'f-file' || e.target.id === 'f-camera') && e.target.files[0]) { setImageBlob(e.target.files[0]); e.target.value = ''; }
     if (e.target.id === 'f-avatar' && e.target.files[0]) {
       const file = e.target.files[0]; e.target.value = '';
@@ -1549,6 +1651,15 @@
     const showErr = (msg) => { const p = $('.error-msg', form); if (p) p.textContent = msg; };
     // errores del PIN: se repinta la pantalla con el aviso y se agita la casilla afectada
     const pinErr = (msg, shake = 'pin') => { S.auth.error = msg; renderAuth(); shakePins(shake); };
+    if (kind === 'album') {
+      if (!albumDraft) return;
+      btn.disabled = true; btn.textContent = 'Subiendo…';
+      try {
+        await api.albumAdd(S.session.token, albumDraft.thumb, albumDraft.photo, $('#f-caption').value.trim());
+        albumDraft = null; closeSheet(); chime('done'); toast('¡Foto en el álbum!'); S.album = null; renderAlbum();
+      } catch (e2) { btn.disabled = false; btn.textContent = 'Reintentar'; handleErr(e2); }
+      return;
+    }
     if (kind === 'chat') {
       const inp = $('#f-chat'), body = inp.value.trim();
       if (!body) return;
@@ -1720,7 +1831,7 @@
     });
   })();
 
-  const APP_VERSION = 12;
+  const APP_VERSION = 13;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
