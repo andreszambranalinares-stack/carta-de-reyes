@@ -631,3 +631,26 @@ html { overscroll-behavior-y: none; }
 .prefs-list dt { font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 600; }
 .prefs-list dd { margin: 2px 0 0; font-size: 1.05rem; overflow-wrap: anywhere; }
 .img-drop .hint .row .btn svg { width: 16px; height: 16px; }
+
+/* ---------- chat secreto ---------- */
+.chat { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-md); background: var(--bg-2); border: 1px solid var(--line); }
+.chat .eyebrow { display: flex; align-items: center; gap: 6px; color: var(--gold); }
+.chat .eyebrow svg { width: 15px; height: 15px; }
+.chat-log { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+.chat-empty { margin: 4px 0; font-size: .9rem; }
+.msg { display: flex; gap: 8px; align-items: flex-end; }
+.msg .avatar { font-size: 12px; }
+.msg.mine { justify-content: flex-end; }
+.bubble { max-width: 78%; padding: 8px 12px; border-radius: 16px 16px 16px 4px; background: var(--surface-2); display: grid; gap: 2px; overflow-wrap: anywhere; }
+.bubble b { font-size: .78rem; color: var(--gold); }
+.bubble time { font-size: .7rem; color: var(--muted); justify-self: end; }
+.msg.mine .bubble { background: var(--gold); color: var(--on-gold); border-radius: 16px 16px 4px 16px; }
+.msg.mine .bubble time { color: rgba(31, 22, 0, .6); }
+.chat-form { display: flex; gap: 8px; }
+.chat-form .input { flex: 1; min-width: 0; min-height: 46px; }
+.chat-send { min-height: 46px; width: 50px; padding: 0; flex: none; }
+.msg-dot {
+  position: absolute; right: 8px; top: 8px; z-index: 3; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--gold); color: var(--on-gold); box-shadow: 0 0 0 3px var(--bg);
+}
+.msg-dot svg { width: 16px; height: 16px; }

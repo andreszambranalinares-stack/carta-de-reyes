@@ -22,7 +22,7 @@ App web familiar: cada uno escribe su carta de Reyes y el resto reserva en secre
 ## Puesta en marcha
 
 1. Crear un proyecto en [supabase.com](https://supabase.com) (plan gratis, región Europa).
-2. SQL Editor → pegar `supabase/schema.sql` → Run, y después `002_fotos.sql`, `003_regalos.sql`, `004_seguridad.sql`, `005_ideas.sql` y `006_detalles.sql` (en ese orden) → Run.
+2. SQL Editor → pegar `supabase/schema.sql` → Run, y después `002_fotos.sql`, `003_regalos.sql`, `004_seguridad.sql`, `005_ideas.sql`, `006_detalles.sql` y `007_chat.sql` (en ese orden) → Run.
    Luego poner el código de familia con la línea `insert into rdc_config…` que explica `004_seguridad.sql`.
 3. Project Settings → API: copiar *Project URL* y la clave *anon public* en `config.js`.
 4. Subir la carpeta a un repositorio de GitHub y activar Pages (Settings → Pages → rama `main`, carpeta `/`).

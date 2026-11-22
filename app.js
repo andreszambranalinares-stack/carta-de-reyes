@@ -51,6 +51,8 @@
     tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12V4a1 1 0 011-1h8l9 9-9 9z"/><circle cx="8" cy="8" r="1.5"/></svg>',
     grip: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 20l18-8L3 4l2 7 9 1-9 1z"/></svg>',
     spark: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>',
     del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 001-1V6a1 1 0 00-1-1z"/><path d="M17 9l-5 6M12 9l5 6"/></svg>',
   };
@@ -94,6 +96,8 @@
     codigo: 'El código tiene que tener al menos 6 caracteres.',
     admin: 'Solo el administrador puede hacer esto.',
     importe: 'Esa cantidad no es válida.',
+    mensaje: 'Escribe algo antes de enviar.',
+    despacio: 'Vas muy rápido. Espera un momento.',
     red: 'No hay conexión. Revisa internet y vuelve a intentarlo.',
   };
   const hhmm = (iso) => new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -143,6 +147,8 @@
     setDiscarded: (t, id, v) => rpc('rdc_set_discarded', { p_token: t, p_item: id, p_discarded: v }),
     reorder: (t, ids) => rpc('rdc_reorder', { p_token: t, p_ids: ids }),
     setPrefs: (t, prefs) => rpc('rdc_set_prefs', { p_token: t, p_prefs: prefs }),
+    messages: (t, id) => rpc('rdc_messages', { p_token: t, p_item: id }),
+    sendMessage: (t, id, body) => rpc('rdc_send_message', { p_token: t, p_item: id, p_body: body }),
   };
 
   // ---------------------------------------------------------------- backend demo (mismo contrato)
@@ -191,7 +197,7 @@
       const g = db.gifts[itemId];
       if (!g) return { reserved: false, reserved_by_me: false, reserved_by: null, gift: null };
       const members = g.members.map((x) => ({ ...pub(db.members.find((m) => m.id === x.id) || { id: x.id, name: '?' }), amount: x.amount }));
-      return { reserved: true, reserved_by_me: isIn(g, uid), reserved_by: members.map((x) => x.name).join(', '), gift: { open: g.open, bought: g.bought, status: g.status || (g.bought ? 'home' : 'pending'), members } };
+      return { reserved: true, reserved_by_me: isIn(g, uid), reserved_by: members.map((x) => x.name).join(', '), gift: { open: g.open, bought: g.bought, status: g.status || (g.bought ? 'home' : 'pending'), members, last_msg_at: isIn(g, uid) ? g.last_msg_at || null : null, last_msg_by: isIn(g, uid) ? g.last_msg_by || null : null } };
     };
     const itemOf = (id, u) => {
       const it = db.items.find((i) => i.id === id);
@@ -335,6 +341,18 @@
         save(); return wait({ ok: true });
       },
       setPrefs(t, prefs) { const u = me(t); if (!u) return fail('sesion'); u.prefs = prefs; save(); return wait({ ok: true }); },
+      messages(t, id) {
+        const u = me(t); if (!u) return fail('sesion');
+        if (!isIn(db.gifts[id], u.id)) return fail('no_existe');
+        db.messages = db.messages || {};
+        return wait({ messages: (db.messages[id] || []).map((x) => ({ ...x, ...pub(db.members.find((m) => m.id === x.member_id) || {}), id: x.id })) });
+      },
+      sendMessage(t, id, body) {
+        const u = me(t); if (!u) return fail('sesion');
+        const g = db.gifts[id]; if (!isIn(g, u.id)) return fail('no_existe');
+        db.messages = db.messages || {}; (db.messages[id] = db.messages[id] || []).push({ id: Date.now(), member_id: u.id, body: String(body).slice(0, 500), created_at: new Date().toISOString() });
+        g.last_msg_at = new Date().toISOString(); g.last_msg_by = u.id; save(); return wait({ ok: true });
+      },
       reset() { db = seed(); save(); },
     };
   })();
@@ -817,7 +835,7 @@
     const isNew = opts.since && it.created_at > opts.since;
     return `
       <button class="card ${taken ? 'taken' : ''}${it.discarded ? ' discarded' : ''}" data-act="item" data-id="${h(it.id)}" data-owner="${h(it.owner_id)}">
-        ${tag}
+        ${tag}${!owner.mine && it.reserved_by_me && unreadChat(it) ? `<span class="msg-dot" aria-label="Mensajes nuevos">${I.chat}</span>` : ''}
         <div class="img">${imgHtml(it, owner.color)}${isNew ? '<span class="tag-new">Nuevo</span>' : ''}</div>
         <div class="body">
           <span class="title">${h(it.title)}</span>
@@ -941,6 +959,7 @@
     if (f) setTimeout(() => f.focus({ preventScroll: true }), 50);
   }
   function closeSheet() {
+    clearTimeout(chatTimer);
     sheetRoot.innerHTML = ''; document.body.style.overflow = '';
     document.removeEventListener('paste', onPasteImage);
     if (lastFocus && lastFocus.focus) try { lastFocus.focus({ preventScroll: true }); } catch { /* nada */ }
@@ -1012,6 +1031,14 @@
           <button class="btn btn-ghost btn-sm" type="submit">Guardar</button>
         </form>
         ${statusPicker(it)}
+        <section class="chat" id="chat" data-id="${sid}" aria-label="Chat secreto del regalo">
+          <p class="eyebrow">${I.chat}Chat del regalo · ${h(owner.name)} no lo ve</p>
+          <div class="chat-log" id="chat-log"><p class="muted chat-empty">Cargando…</p></div>
+          <form class="chat-form" data-form="chat" data-id="${sid}" novalidate>
+            <input class="input" id="f-chat" maxlength="500" autocomplete="off" placeholder="Escribe a los que regaláis esto…">
+            <button class="btn btn-gold chat-send" type="submit" aria-label="Enviar">${I.send}</button>
+          </form>
+        </section>
         <button class="btn btn-ghost btn-block" data-act="unreserve" data-id="${sid}">Salirme del regalo</button>`;
       } else if (open) reserve = `
         <div class="reserve-state share">${I.users}<span><b>Lo regalan a medias.</b> ¿Te apuntas?${g.bought ? ' Ya está comprado.' : ''}</span></div>
@@ -1043,6 +1070,32 @@
               <div class="row" style="flex-wrap:nowrap"><button class="btn btn-ghost btn-sm" style="flex:1" data-act="cancel-delete">Cancelar</button><button class="btn btn-danger btn-sm" style="flex:1" data-act="delete" data-id="${h(it.id)}">Sí, borrar</button></div></div>` : ''}
         </div>
       </div>`, it.title);
+    if ($('#chat')) loadChat(it.id, true);
+  }
+
+  // ---------- chat secreto
+  const chatSeenKey = () => `rdc.chatseen.${S.session.id}`;
+  const unreadChat = (it) => {
+    const g = it.gift; if (!g || !g.last_msg_at || g.last_msg_by === S.session.id) return false;
+    const seen = (ls.get(chatSeenKey()) || {})[it.id];
+    return !seen || g.last_msg_at > seen;
+  };
+  let chatTimer = null;
+  async function loadChat(id, first) {
+    clearTimeout(chatTimer);
+    const log = $('#chat-log'); if (!log || $('#chat').dataset.id !== id) return;
+    try {
+      const r = await api.messages(S.session.token, id);
+      const msgs = r.messages || [];
+      const stick = first || log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+      log.innerHTML = msgs.length ? msgs.map((m) => {
+        const mine = m.member_id === S.session.id;
+        return `<div class="msg${mine ? ' mine' : ''}">${mine ? '' : avatar(m, 26, '', true)}<div class="bubble">${mine ? '' : `<b>${h(m.name)}</b>`}<span>${h(m.body)}</span><time>${h(hhmm(m.created_at))}</time></div></div>`;
+      }).join('') : '<p class="muted chat-empty">Aún no hay mensajes. Poneos de acuerdo aquí: quién lo compra, cómo os pagáis…</p>';
+      if (stick) log.scrollTop = log.scrollHeight;
+      const s = ls.get(chatSeenKey()) || {}; s[id] = msgs.length ? msgs[msgs.length - 1].created_at : new Date().toISOString(); ls.set(chatSeenKey(), s);
+    } catch (e) { if (first) log.innerHTML = `<p class="muted chat-empty">${h(errText(e))}</p>`; }
+    chatTimer = setTimeout(() => loadChat(id, false), 7000);
   }
 
   // ---------- formulario de deseo
@@ -1496,6 +1549,15 @@
     const showErr = (msg) => { const p = $('.error-msg', form); if (p) p.textContent = msg; };
     // errores del PIN: se repinta la pantalla con el aviso y se agita la casilla afectada
     const pinErr = (msg, shake = 'pin') => { S.auth.error = msg; renderAuth(); shakePins(shake); };
+    if (kind === 'chat') {
+      const inp = $('#f-chat'), body = inp.value.trim();
+      if (!body) return;
+      btn.disabled = true;
+      try { await api.sendMessage(S.session.token, form.dataset.id, body); inp.value = ''; chime('soft'); await loadChat(form.dataset.id, true); }
+      catch (e2) { handleErr(e2); }
+      btn.disabled = false; inp.focus();
+      return;
+    }
     if (kind === 'prefs') {
       const prefs = {}; PREFS.forEach(([k]) => { const v = $('#p-' + k).value.trim(); if (v) prefs[k] = v; });
       btn.disabled = true;
@@ -1658,7 +1720,7 @@
     });
   })();
 
-  const APP_VERSION = 11;
+  const APP_VERSION = 12;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
