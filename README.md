@@ -21,7 +21,7 @@ App web familiar: cada uno escribe su carta de Reyes y el resto reserva en secre
 ## Puesta en marcha
 
 1. Crear un proyecto en [supabase.com](https://supabase.com) (plan gratis, región Europa).
-2. SQL Editor → pegar `supabase/schema.sql` → Run, y después `supabase/002_fotos.sql` → Run.
+2. SQL Editor → pegar `supabase/schema.sql` → Run, y después `002_fotos.sql` y `003_regalos.sql` (en ese orden) → Run.
 3. Project Settings → API: copiar *Project URL* y la clave *anon public* en `config.js`.
 4. Subir la carpeta a un repositorio de GitHub y activar Pages (Settings → Pages → rama `main`, carpeta `/`).
 

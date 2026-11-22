@@ -7,7 +7,7 @@
 
   const CFG = window.RDC_CONFIG || {};
   const DEMO = !CFG.supabaseUrl || !CFG.supabaseAnonKey;
-  const K = { family: 'rdc.family', session: 'rdc.session', theme: 'rdc.theme', demo: 'rdc.demo.v1' };
+  const K = { family: 'rdc.family', session: 'rdc.session', theme: 'rdc.theme', demo: 'rdc.demo.v2', seen: 'rdc.seen' };
 
   const ls = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -45,6 +45,10 @@
     alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/></svg>',
     down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.4.3 4 2.1 4.5 4.9"/></svg>',
+    bag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
+    wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h14a2 2 0 012 2v9a2 2 0 01-2 2H5a1 1 0 01-1-1V7z"/><path d="M4 7l11-3v3M16 13.5h.01"/></svg>',
+    spark: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>',
     del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 001-1V6a1 1 0 00-1-1z"/><path d="M17 9l-5 6M12 9l5 6"/></svg>',
   };
 
@@ -100,12 +104,16 @@
     members: (family) => rpc('rdc_members_list', { p_family: family }),
     register: (family, name, pin) => rpc('rdc_register', { p_family: family, p_name: name, p_pin: pin }),
     login: (family, id, pin) => rpc('rdc_login', { p_family: family, p_member: id, p_pin: pin }),
-    home: (t) => rpc('rdc_home', { p_token: t }),
+    home: (t, seen) => rpc('rdc_home', { p_token: t, p_seen: seen || {} }),
     items: (t, owner) => rpc('rdc_items_list', { p_token: t, p_owner: owner }),
     gifts: (t) => rpc('rdc_my_gifts', { p_token: t }),
     save: (t, item) => rpc('rdc_save_item', { p_token: t, p_item: item }),
     remove: (t, id) => rpc('rdc_delete_item', { p_token: t, p_id: id }),
     reserve: (t, id, on) => rpc('rdc_reserve', { p_token: t, p_item: id, p_on: on }),
+    share: (t, id) => rpc('rdc_share', { p_token: t, p_item: id }),
+    setBought: (t, id, bought) => rpc('rdc_set_bought', { p_token: t, p_item: id, p_bought: bought }),
+    setAmount: (t, id, amount) => rpc('rdc_set_amount', { p_token: t, p_item: id, p_amount: amount }),
+    setBudget: (t, amount) => rpc('rdc_set_budget', { p_token: t, p_amount: amount }),
     setPhoto: (t, photo) => rpc('rdc_set_photo', { p_token: t, p_photo: photo }),
   };
 
@@ -114,8 +122,8 @@
     const seed = () => {
       const now = Date.now();
       const m = (id, name, color, i) => ({ id, name, color, pin: '1234', token: 't-' + id, created: now - 1e6 + i });
-      const it = (owner, title, category, priority, price, notes = '', url = '') =>
-        ({ id: 'i' + Math.random().toString(36).slice(2, 10), owner_id: owner, title, category, priority, price, notes, url, image: null, created_at: new Date(now - Math.random() * 1e8).toISOString() });
+      const it = (owner, title, category, priority, price, notes = '', url = '', ago = 1e8) =>
+        ({ id: 'i' + Math.random().toString(36).slice(2, 10), owner_id: owner, title, category, priority, price, notes, url, image: null, created_at: new Date(now - Math.random() * ago - 2e8).toISOString() });
       const items = [
         it('ana', 'Auriculares inalámbricos con cancelación de ruido', 'Tecnología', 3, 249, 'En blanco, por favor', 'https://www.apple.com/es/airpods-pro/'),
         it('ana', 'Kindle Paperwhite', 'Tecnología', 2, 159.99),
@@ -132,7 +140,11 @@
       return {
         members: [m('ana', 'Ana', 1, 1), m('mama', 'Mamá', 2, 2), m('papa', 'Papá', 3, 3)],
         items,
-        reservations: { [items[1].id]: 'mama', [items[8].id]: 'ana' },
+        gifts: {
+          [items[1].id]: { open: false, bought: false, members: [{ id: 'mama', amount: null }] },
+          [items[0].id]: { open: true, bought: false, members: [{ id: 'papa', amount: 120 }] },
+          [items[8].id]: { open: false, bought: true, members: [{ id: 'ana', amount: null }] },
+        },
       };
     };
     let db = ls.get(K.demo) || seed();
@@ -145,6 +157,19 @@
     const strip = ({ id, owner_id, title, url, image, price, category, priority, notes, created_at }) =>
       ({ id, owner_id, title, url, image, price, category, priority, notes, created_at });
     const sort = (a, b) => (b.priority - a.priority) || (b.created_at > a.created_at ? 1 : -1);
+    const isIn = (g, uid) => !!g && g.members.some((x) => x.id === uid);
+    const giftJson = (itemId, uid) => {
+      const g = db.gifts[itemId];
+      if (!g) return { reserved: false, reserved_by_me: false, reserved_by: null, gift: null };
+      const members = g.members.map((x) => ({ ...pub(db.members.find((m) => m.id === x.id) || { id: x.id, name: '?' }), amount: x.amount }));
+      return { reserved: true, reserved_by_me: isIn(g, uid), reserved_by: members.map((x) => x.name).join(', '), gift: { open: g.open, bought: g.bought, members } };
+    };
+    const itemOf = (id, u) => {
+      const it = db.items.find((i) => i.id === id);
+      if (!it) return [null, 'no_existe'];
+      if (it.owner_id === u.id) return [null, 'propio'];
+      return [it, null];
+    };
     return {
       members: (f) => fam(f) ? wait({ members: db.members.map(pub) }) : fail('familia'),
       register(f, name, pin) {
@@ -163,32 +188,31 @@
         if (!m) return fail('no_existe');
         return m.pin === pin ? wait({ token: m.token, ...pub(m) }) : fail('pin');
       },
-      home(t) {
+      home(t, seen = {}) {
         const u = me(t); if (!u) return fail('sesion');
         const count = (id) => db.items.filter((i) => i.owner_id === id).length;
         return wait({
-          me: { ...pub(u), count: count(u.id) },
+          me: { ...pub(u), budget: u.budget ?? null, count: count(u.id) },
           members: db.members.filter((m) => m.id !== u.id).map((m) => ({ ...pub(m), count: count(m.id),
-            mine: db.items.filter((i) => i.owner_id === m.id && db.reservations[i.id] === u.id).length })),
-          gifts: Object.values(db.reservations).filter((v) => v === u.id).length,
+            mine: db.items.filter((i) => i.owner_id === m.id && isIn(db.gifts[i.id], u.id)).length,
+            new: seen[m.id] ? db.items.filter((i) => i.owner_id === m.id && i.created_at > seen[m.id]).length : 0 })),
+          gifts: Object.values(db.gifts).filter((g) => isIn(g, u.id)).length,
+          now: new Date().toISOString(),
         });
       },
       items(t, owner) {
         const u = me(t); if (!u) return fail('sesion');
         const list = db.items.filter((i) => i.owner_id === owner).sort(sort);
         if (owner === u.id) return wait({ items: list.map(strip) });
-        return wait({ items: list.map((i) => {
-          const by = db.reservations[i.id];
-          return { ...strip(i), reserved: !!by, reserved_by_me: by === u.id, reserved_by: by ? (db.members.find((m) => m.id === by) || {}).name : null };
-        }) });
+        return wait({ items: list.map((i) => ({ ...strip(i), ...giftJson(i.id, u.id) })) });
       },
       gifts(t) {
         const u = me(t); if (!u) return fail('sesion');
-        const list = db.items.filter((i) => db.reservations[i.id] === u.id).map((i) => {
+        const list = db.items.filter((i) => isIn(db.gifts[i.id], u.id)).map((i) => {
           const o = db.members.find((m) => m.id === i.owner_id) || {};
-          return { ...strip(i), owner_name: o.name, owner_color: o.color, owner_photo: o.photo || null, reserved: true, reserved_by_me: true };
+          return { ...strip(i), ...giftJson(i.id, u.id), owner_name: o.name, owner_color: o.color, owner_photo: o.photo || null };
         });
-        return wait({ items: list });
+        return wait({ budget: u.budget ?? null, items: list });
       },
       save(t, item) {
         const u = me(t); if (!u) return fail('sesion');
@@ -209,20 +233,45 @@
       remove(t, id) {
         const u = me(t); if (!u) return fail('sesion');
         db.items = db.items.filter((i) => !(i.id === id && i.owner_id === u.id));
-        delete db.reservations[id]; save();
+        delete db.gifts[id]; save();
         return wait({ ok: true });
       },
       reserve(t, id, on) {
         const u = me(t); if (!u) return fail('sesion');
-        const it = db.items.find((i) => i.id === id);
-        if (!it) return fail('no_existe');
-        if (it.owner_id === u.id) return fail('propio');
+        const [, err] = itemOf(id, u); if (err) return fail(err);
+        const g = db.gifts[id];
         if (on) {
-          if (db.reservations[id] && db.reservations[id] !== u.id) return fail('ocupado');
-          db.reservations[id] = u.id;
-        } else if (db.reservations[id] === u.id) delete db.reservations[id];
-        save();
-        return wait({ ok: true });
+          if (g && g.members.some((x) => x.id !== u.id)) return fail('ocupado');
+          db.gifts[id] = { open: false, bought: g ? g.bought : false, members: [{ id: u.id, amount: null }] };
+        } else if (g) {
+          g.members = g.members.filter((x) => x.id !== u.id);
+          if (!g.members.length) delete db.gifts[id];
+        }
+        save(); return wait({ ok: true });
+      },
+      share(t, id) {
+        const u = me(t); if (!u) return fail('sesion');
+        const [, err] = itemOf(id, u); if (err) return fail(err);
+        const g = db.gifts[id];
+        if (!g) db.gifts[id] = { open: true, bought: false, members: [{ id: u.id, amount: null }] };
+        else if (isIn(g, u.id)) g.open = true;
+        else if (g.open) g.members.push({ id: u.id, amount: null });
+        else return fail('ocupado');
+        save(); return wait({ ok: true });
+      },
+      setBought(t, id, bought) {
+        const u = me(t); if (!u) return fail('sesion');
+        const g = db.gifts[id]; if (!isIn(g, u.id)) return fail('no_existe');
+        g.bought = !!bought; save(); return wait({ ok: true });
+      },
+      setAmount(t, id, amount) {
+        const u = me(t); if (!u) return fail('sesion');
+        const g = db.gifts[id]; if (!isIn(g, u.id)) return fail('no_existe');
+        g.members.find((x) => x.id === u.id).amount = amount; save(); return wait({ ok: true });
+      },
+      setBudget(t, amount) {
+        const u = me(t); if (!u) return fail('sesion');
+        u.budget = amount; save(); return wait({ ok: true });
       },
       setPhoto(t, photo) {
         const u = me(t); if (!u) return fail('sesion');
@@ -383,6 +432,8 @@
     items: {},       // ownerId -> items
     gifts: null,
     cat: {},         // ownerId -> categoría elegida
+    budget: null,    // presupuesto por persona
+    viewing: null, since: null, editBudget: false,
     auth: { step: 'code', members: [], pick: null, error: '' },
   };
 
@@ -397,7 +448,7 @@
   const go = (hash) => { if (location.hash.replace(/^#/, '') === hash) render(); else location.hash = hash; };
 
   function logout(msg) {
-    ls.del(K.session); S.session = null; S.home = null; S.items = {}; S.gifts = null;
+    ls.del(K.session); S.session = null; S.home = null; S.items = {}; S.gifts = null; S.budget = null; S.viewing = null;
     S.auth = { step: S.family ? 'who' : 'code', members: [], pick: null, error: msg || '' };
     closeSheet();
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
@@ -597,10 +648,28 @@
       <button class="me-btn" data-act="menu" aria-label="Tu perfil y ajustes">${avatar(S.session, 50, '', true)}${I.down}</button>
     </header>`;
 
+  // ---------- novedades: cuándo vi por última vez la carta de cada uno (solo en este móvil)
+  const seenKey = () => `${K.seen}.${S.session.id}`;
+  const getSeen = () => ls.get(seenKey()) || {};
+  const serverNow = () => (S.home && S.home.now) || new Date().toISOString();
+  function markSeen(ownerId) { const s = getSeen(); s[ownerId] = serverNow(); ls.set(seenKey(), s); }
+
+  async function loadHome() {
+    const seen = getSeen();
+    S.home = await api.home(S.session.token, seen);
+    syncMe(S.home.me);
+    S.budget = S.home.me.budget != null ? Number(S.home.me.budget) : null;
+    // a quien no había visto nunca, lo doy por visto ahora: solo cuenta lo que añada a partir de hoy
+    const missing = S.home.members.filter((m) => !seen[m.id]);
+    if (missing.length) { missing.forEach((m) => { seen[m.id] = S.home.now || new Date().toISOString(); }); ls.set(seenKey(), seen); }
+    return S.home;
+  }
+
   async function renderHome() {
     const me = S.session;
     const paint = () => {
       const d = S.home;
+      const news = d ? d.members.filter((m) => m.new > 0) : [];
       app.innerHTML = `
         ${topbar(null)}
         <p class="countdown">${countdown()}</p>
@@ -611,10 +680,16 @@
             <span class="sub">${d ? (d.me.count ? plural(d.me.count, 'deseo', 'deseos') : 'Aún vacía: añade tu primer deseo') : '…'}</span></span>
           <span class="chev">${I.chev}</span>
         </button>
+        ${news.length ? `<section class="news" aria-label="Novedades">
+          <p class="eyebrow">${I.spark}Novedades desde tu última visita</p>
+          ${news.map((m) => `<button class="news-row" data-act="open-list" data-id="${h(m.id)}">${avatar(m, 38, '', true)}
+            <span class="grow"><b>${h(m.name)}</b> ha añadido ${plural(m.new, 'deseo nuevo', 'deseos nuevos')}</span><span class="chev">${I.chev}</span></button>`).join('')}
+        </section>` : ''}
         <div class="section-head"><h2 class="display">La familia</h2></div>
         ${!d ? '<div class="family-grid">' + '<div class="skeleton" style="height:170px"></div>'.repeat(3) + '</div>'
           : d.members.length ? `<div class="family-grid">${d.members.map((m) => `
             <button class="member" data-act="open-list" data-id="${h(m.id)}">
+              ${m.new ? `<span class="new-dot">${m.new}</span>` : ''}
               ${avatar(m, 68, m.mine ? '✓' + m.mine : '', true)}
               <span class="name">${h(m.name)}</span>
               <span class="meta">${m.count ? plural(m.count, 'deseo', 'deseos') : 'Sin deseos aún'}${m.mine ? `<br><b>regalas ${m.mine}</b>` : ''}</span>
@@ -625,11 +700,7 @@
         <button class="fab" data-act="add">${I.plus}<span>Añadir deseo</span></button>`;
     };
     paint();
-    try {
-      S.home = await api.home(me.token);
-      syncMe(S.home.me);
-      if (route().view === 'home') paint();
-    } catch (e) { handleErr(e); }
+    try { await loadHome(); if (route().view === 'home') paint(); } catch (e) { handleErr(e); }
   }
 
   // ---------- lista de una persona
@@ -645,25 +716,35 @@
     return [...map.entries()].sort((a, b) => (a[0] === 'Sin categoría') - (b[0] === 'Sin categoría') || b[1] - a[1]);
   };
 
-  function cardHtml(it, owner) {
-    let tag = '';
+  function cardHtml(it, owner, opts = {}) {
+    let tag = '', taken = false;
+    const open = !!(it.gift && it.gift.open), bought = !!(it.gift && it.gift.bought);
     if (!owner.mine && it.reserved) {
-      tag = it.reserved_by_me ? `<span class="tag mine">${I.checkCircle}Lo regalas tú</span>` : `<span class="tag">${I.lock}Ya lo regala ${h(it.reserved_by || 'alguien')}</span>`;
+      if (it.reserved_by_me) {
+        tag = opts.giftsView
+          ? (bought ? `<span class="tag mine">${I.checkCircle}Comprado</span>` : `<span class="tag todo">${I.bag}Por comprar</span>`)
+          : `<span class="tag mine">${open ? I.users : I.checkCircle}${open ? 'A medias contigo' : 'Lo regalas tú'}</span>`;
+      } else if (open) tag = `<span class="tag share">${I.users}A medias · ¿te apuntas?</span>`;
+      else { tag = `<span class="tag">${I.lock}Ya lo regala ${h(it.reserved_by || 'alguien')}</span>`; taken = true; }
     }
+    const isNew = opts.since && it.created_at > opts.since;
     return `
-      <button class="card ${!owner.mine && it.reserved && !it.reserved_by_me ? 'taken' : ''}" data-act="item" data-id="${h(it.id)}" data-owner="${h(it.owner_id)}">
+      <button class="card ${taken ? 'taken' : ''}" data-act="item" data-id="${h(it.id)}" data-owner="${h(it.owner_id)}">
         ${tag}
-        <div class="img">${imgHtml(it, owner.color)}</div>
+        <div class="img">${imgHtml(it, owner.color)}${isNew ? '<span class="tag-new">Nuevo</span>' : ''}</div>
         <div class="body">
           <span class="title">${h(it.title)}</span>
-          <span class="foot"><span class="price">${h(eur(it.price))}</span>${stars(it.priority)}</span>
+          <span class="foot"><span class="price">${opts.giftsView && open ? `${h(eur(myCost(it)))}<small>tu parte de ${h(eur(it.price) || '—')}</small>` : h(eur(it.price))}</span>${stars(it.priority)}</span>
         </div>
       </button>`;
   }
 
   async function renderList(ownerId) {
-    if (!S.home && ownerId !== S.session.id) { try { S.home = await api.home(S.session.token); } catch (e) { return handleErr(e); } }
+    if (!S.home && ownerId !== S.session.id) { try { await loadHome(); } catch (e) { return handleErr(e); } }
     const owner = ownerInfo(ownerId);
+    // lo que había antes de entrar marca los «Nuevo»; al entrar, la carta queda vista
+    if (!owner.mine && S.viewing !== ownerId) { S.viewing = ownerId; S.since = getSeen()[ownerId] || null; markSeen(ownerId); }
+    const since = owner.mine ? null : S.since;
     const paint = () => {
       const items = S.items[ownerId];
       const cats = items ? categoriesOf(items) : [];
@@ -675,7 +756,7 @@
       else if (!items.length) content = owner.mine
         ? `<div class="empty"><span class="display">Tu carta está en blanco</span><p>Pega el enlace de algo que te guste y la app sacará la foto y el precio sola.</p><button class="btn btn-gold" data-act="add">${I.plus}Añadir mi primer deseo</button></div>`
         : `<div class="empty"><span class="display">${h(owner.name)} aún no ha pedido nada</span><p>Vuelve en un rato. Los Reyes también necesitan pistas.</p></div>`;
-      else content = `<div class="grid">${items.filter((i) => cat === 'all' || (i.category || 'Sin categoría') === cat).map((i) => cardHtml(i, owner)).join('')}</div>`;
+      else content = `<div class="grid">${items.filter((i) => cat === 'all' || (i.category || 'Sin categoría') === cat).map((i) => cardHtml(i, owner, { since })).join('')}</div>`;
 
       app.innerHTML = `
         ${topbar('home')}
@@ -694,8 +775,11 @@
     };
     paint();
     try {
-      const r = await api.items(S.session.token, ownerId);
+      const jobs = [api.items(S.session.token, ownerId)];
+      if (!owner.mine && !S.gifts) jobs.push(api.gifts(S.session.token)); // para avisar del presupuesto al reservar
+      const [r, g] = await Promise.all(jobs);
       S.items[ownerId] = r.items || [];
+      if (g) { S.gifts = g.items || []; if (g.budget != null) S.budget = Number(g.budget); }
       const cur = route();
       if (cur.view === 'list' && cur.owner === ownerId) paint();
     } catch (e) { handleErr(e); }
@@ -704,25 +788,48 @@
   // ---------- lo que regalo yo
   async function renderGifts() {
     const paint = () => {
-      const items = S.gifts;
-      const total = items ? items.reduce((s, i) => s + (Number(i.price) || 0), 0) : 0;
+      const items = S.gifts, budget = S.budget;
+      const total = items ? items.reduce((s, i) => s + myCost(i), 0) : 0;
+      const bought = items ? items.filter((i) => i.gift && i.gift.bought).length : 0;
       const groups = new Map();
       (items || []).forEach((i) => { if (!groups.has(i.owner_id)) groups.set(i.owner_id, { name: i.owner_name, color: i.owner_color, photo: i.owner_photo, items: [] }); groups.get(i.owner_id).items.push(i); });
+      const budgetBox = S.editBudget
+        ? `<form class="budget-box" data-form="budget" novalidate>
+            <label for="f-budget">¿Cuánto quieres gastarte en cada persona?</label>
+            <div class="row" style="flex-wrap:nowrap"><div class="price-wrap" style="flex:1"><input class="input tnum" id="f-budget" inputmode="decimal" placeholder="Por ejemplo, 100" value="${budget ? h(String(budget).replace('.', ',')) : ''}"><span>€</span></div>
+            <button class="btn btn-gold btn-sm" type="submit">Guardar</button></div>
+            ${budget ? '<button type="button" class="link-btn" data-act="clear-budget">Quitar presupuesto</button>' : ''}
+          </form>`
+        : `<button class="budget-box as-btn" data-act="edit-budget">${I.wallet}<span class="grow">${budget ? `Presupuesto: <b>${h(eur(budget))}</b> por persona` : 'Ponte un presupuesto por persona'}</span><span class="link-btn">${budget ? 'Cambiar' : 'Añadir'}</span></button>`;
       app.innerHTML = `
         ${topbar('home')}
         <div class="hero-card">${KINGS}
           <div class="grow"><p class="eyebrow">Tus reservas</p><h1 class="display">Lo que regalo yo</h1>
-          <span class="sub">${items ? (items.length ? `${plural(items.length, 'regalo', 'regalos')} · ${h(eur(total) || '—')}` : 'Aún ninguno') : '…'}</span></div>
+          <span class="sub">${items ? (items.length ? `${plural(items.length, 'regalo', 'regalos')} · ${bought} ${bought === 1 ? 'comprado' : 'comprados'}` : 'Aún ninguno') : '…'}</span></div>
         </div>
+        ${budgetBox}
         ${!items ? '<div class="skeleton" style="height:200px;margin-top:18px"></div>'
-          : !items.length ? `<div class="empty" style="margin-top:18px"><span class="display">Aún no has elegido nada</span><p>Entra en la carta de alguien, abre un deseo y pulsa «¡Lo regalo yo!».</p><button class="btn btn-ghost" data-act="home">Ver la familia</button></div>`
-          : `<div class="total-bar"><span class="muted">Total aproximado</span><b>${h(eur(total) || '—')}</b></div>
-            ${[...groups.entries()].map(([, g]) => `<section class="gift-group">
-              <div class="gift-group-head">${avatar(g, 44, '', true)}<span class="display">Para ${h(g.name)}</span></div>
-              <div class="grid">${g.items.map((i) => cardHtml(i, { mine: false, color: g.color })).join('')}</div></section>`).join('')}`}`;
+          : !items.length ? `<div class="empty" style="margin-top:18px"><span class="display">Aún no has elegido nada</span><p>Entra en la carta de alguien, abre un deseo y pulsa «¡Lo regalo yo!» o «Lo regalamos a medias».</p><button class="btn btn-ghost" data-act="home">Ver la familia</button></div>`
+          : `<div class="total-bar"><span class="muted">Lo que pones tú en total</span><b>${h(eur(total) || '—')}</b></div>
+            ${[...groups.entries()].map(([, g]) => {
+              const spent = g.items.reduce((s, i) => s + myCost(i), 0);
+              const pct = budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
+              const over = budget && spent > budget;
+              return `<section class="gift-group">
+              <div class="gift-group-head">${avatar(g, 44, '', true)}<span class="display grow">Para ${h(g.name)}</span>
+                <span class="spent${over ? ' over' : ''}">${h(eur(spent) || '0 €')}${budget ? ` <small>de ${h(eur(budget))}</small>` : ''}</span></div>
+              ${budget ? `<div class="meter${over ? ' over' : ''}" role="img" aria-label="${h(eur(spent))} de ${h(eur(budget))}"><span style="width:${pct}%"></span></div>
+                ${over ? `<p class="budget-line over">${I.wallet}<span>Te has pasado ${h(eur(spent - budget))} del presupuesto para ${h(g.name)}.</span></p>` : ''}` : ''}
+              <div class="grid">${g.items.map((i) => cardHtml(i, { mine: false, color: g.color }, { giftsView: true })).join('')}</div></section>`;
+            }).join('')}`}`;
+      if (S.editBudget) setTimeout(() => { const f = $('#f-budget'); if (f) f.focus(); }, 50);
     };
     paint();
-    try { S.gifts = (await api.gifts(S.session.token)).items || []; if (route().view === 'gifts') paint(); } catch (e) { handleErr(e); }
+    try {
+      const r = await api.gifts(S.session.token);
+      S.gifts = r.items || []; S.budget = r.budget != null ? Number(r.budget) : null;
+      if (route().view === 'gifts') paint();
+    } catch (e) { handleErr(e); }
   }
 
   // ---------------------------------------------------------------- hojas
@@ -747,17 +854,62 @@
     return (S.gifts || []).find((i) => i.id === id) || null;
   }
 
+  // ---------- regalos: cuánto pongo yo y presupuesto
+  const giftMembers = (it) => (it.gift && it.gift.members) || [];
+  function myCost(it) {
+    const ms = giftMembers(it), mine = ms.find((m) => m.id === S.session.id);
+    if (mine && mine.amount != null) return Number(mine.amount);
+    const price = Number(it.price) || 0;
+    return it.gift && it.gift.open ? price / Math.max(1, ms.length) : price;
+  }
+  const spentFor = (ownerId, exceptId) => (S.gifts || []).filter((g) => g.owner_id === ownerId && g.id !== exceptId).reduce((s, g) => s + myCost(g), 0);
+  function budgetLine(it, ownerName, extra) {
+    const b = S.budget; if (!b || !S.gifts) return '';
+    const after = spentFor(it.owner_id, it.id) + (extra || 0);
+    const over = after > b;
+    return `<p class="budget-line${over ? ' over' : ''}">${I.wallet}<span>${over ? 'Te pasarías del presupuesto: ' : 'Con este regalo llevarías '}<b>${h(eur(after))}</b> de ${h(eur(b))} para ${h(ownerName)}.</span></p>`;
+  }
+  const whoList = (it) => giftMembers(it).map((m) => `
+    <li>${avatar(m, 30, '', true)}<span class="grow">${m.id === S.session.id ? 'Tú' : h(m.name)}</span><span class="tnum muted">${m.amount != null ? `pone ${h(eur(m.amount))}` : 'sin cantidad'}</span></li>`).join('');
+  const boughtBtn = (it) => it.gift && it.gift.bought
+    ? `<button class="btn btn-ghost btn-block bought-on" data-act="bought" data-id="${h(it.id)}" data-v="0">${I.checkCircle}Comprado · desmarcar</button>`
+    : `<button class="btn btn-ghost btn-block" data-act="bought" data-id="${h(it.id)}" data-v="1">${I.bag}Marcar como comprado</button>`;
+
   function openDetail(id) {
     const it = findItem(id); if (!it) return;
     const mine = it.owner_id === S.session.id;
     const owner = mine ? S.session : (S.home && S.home.members.find((m) => m.id === it.owner_id)) || { name: it.owner_name || '', color: it.owner_color || 0 };
+    const g = it.gift, open = !!(g && g.open), sid = h(it.id);
     let reserve = '';
     if (!mine) {
-      if (!it.reserved) reserve = `<button class="btn btn-gold btn-block" data-act="reserve" data-id="${h(it.id)}">${I.gift}¡Lo regalo yo!</button>
-        <p class="secret-note">${I.eyeOff}<span>${h(owner.name)} no verá que lo has reservado. El resto de la familia sí, para no repetir.</span></p>`;
-      else if (it.reserved_by_me) reserve = `<div class="reserve-state mine">${I.check}<span><b>Lo regalas tú.</b> Nadie más podrá reservarlo.</span></div>
-        <button class="btn btn-ghost btn-block" data-act="unreserve" data-id="${h(it.id)}">Ya no lo regalo</button>`;
-      else reserve = `<div class="reserve-state">${I.lock}<span>Ya lo regala <b>${h(it.reserved_by || 'otra persona')}</b>. Elige otro deseo.</span></div>`;
+      if (!it.reserved) reserve = `
+        <button class="btn btn-gold btn-block" data-act="reserve" data-id="${sid}">${I.gift}¡Lo regalo yo!</button>
+        <button class="btn btn-ghost btn-block" data-act="share" data-id="${sid}">${I.users}Lo regalamos a medias</button>
+        ${budgetLine(it, owner.name, Number(it.price) || 0)}
+        <p class="secret-note">${I.eyeOff}<span>${h(owner.name)} no verá que lo has reservado. El resto de la familia sí, para no repetir. «A medias» deja que otros se apunten contigo.</span></p>`;
+      else if (it.reserved_by_me && !open) reserve = `
+        <div class="reserve-state mine">${I.checkCircle}<span><b>Lo regalas tú.</b> Nadie más puede reservarlo.</span></div>
+        ${boughtBtn(it)}
+        <div class="row" style="flex-wrap:nowrap"><button class="btn btn-ghost btn-sm" style="flex:1" data-act="share" data-id="${sid}">${I.users}Abrir a medias</button>
+          <button class="btn btn-ghost btn-sm" style="flex:1" data-act="unreserve" data-id="${sid}">Ya no lo regalo</button></div>`;
+      else if (it.reserved_by_me) {
+        const meM = giftMembers(it).find((m) => m.id === S.session.id) || {};
+        reserve = `
+        <div class="reserve-state mine">${I.users}<span><b>Lo regaláis a medias.</b> ${giftMembers(it).length === 1 ? 'De momento solo tú: el resto de la familia puede apuntarse.' : ''}</span></div>
+        <ul class="who-pays">${whoList(it)}</ul>
+        <form class="amount-row" data-form="amount" data-id="${sid}" novalidate>
+          <label for="f-amount">Yo pongo</label>
+          <div class="price-wrap"><input class="input tnum" id="f-amount" inputmode="decimal" placeholder="${h(String(Math.round(myCost(it) * 100) / 100).replace('.', ','))}" value="${meM.amount != null ? h(String(meM.amount).replace('.', ',')) : ''}"><span>€</span></div>
+          <button class="btn btn-ghost btn-sm" type="submit">Guardar</button>
+        </form>
+        ${boughtBtn(it)}
+        <button class="btn btn-ghost btn-block" data-act="unreserve" data-id="${sid}">Salirme del regalo</button>`;
+      } else if (open) reserve = `
+        <div class="reserve-state share">${I.users}<span><b>Lo regalan a medias.</b> ¿Te apuntas?${g.bought ? ' Ya está comprado.' : ''}</span></div>
+        <ul class="who-pays">${whoList(it)}</ul>
+        <button class="btn btn-gold btn-block" data-act="share" data-id="${sid}">${I.users}Me apunto a medias</button>
+        ${budgetLine(it, owner.name, (Number(it.price) || 0) / (giftMembers(it).length + 1))}`;
+      else reserve = `<div class="reserve-state">${I.lock}<span>Ya lo regala <b>${h(it.reserved_by || 'otra persona')}</b>.${g && g.bought ? ' Ya está comprado.' : ''} Elige otro deseo.</span></div>`;
     }
     openSheet(`
       ${sheetHead(mine ? 'Tu deseo' : `Deseo de ${owner.name}`, '')}
@@ -937,20 +1089,21 @@
         try { await api.remove(S.session.token, id); closeSheet(); toast('Deseo borrado'); S.home = null; refreshCurrent(); }
         catch (err) { el.disabled = false; handleErr(err); }
         break;
-      case 'reserve': case 'unreserve':
+      case 'reserve': case 'unreserve': case 'share': case 'bought':
         el.disabled = true;
         try {
-          await api.reserve(S.session.token, id, act === 'reserve');
-          const it = findItem(id);
-          closeSheet();
-          toast(act === 'reserve' ? '¡Apuntado! Es tu regalo' : 'Reserva quitada');
-          if (it) { it.reserved = act === 'reserve'; it.reserved_by_me = act === 'reserve'; it.reserved_by = act === 'reserve' ? S.session.name : null; }
-          S.home = null; S.gifts = null; refreshCurrent();
+          if (act === 'share') await api.share(S.session.token, id);
+          else if (act === 'bought') await api.setBought(S.session.token, id, el.dataset.v === '1');
+          else await api.reserve(S.session.token, id, act === 'reserve');
+          const msg = { reserve: '¡Apuntado! Es tu regalo', unreserve: 'Ya no participas en este regalo', share: 'Apuntado a medias', bought: el.dataset.v === '1' ? 'Marcado como comprado' : 'Desmarcado' }[act];
+          await afterGiftChange(id, msg, act === 'share' || act === 'bought');
         } catch (err) {
           el.disabled = false; handleErr(err);
-          if (err.code === 'ocupado') { closeSheet(); refreshCurrent(); }
+          if (err.code === 'ocupado') { closeSheet(); await afterGiftChange(id, null, false); }
         }
         break;
+      case 'edit-budget': S.editBudget = true; renderGifts(); break;
+      case 'clear-budget': saveBudget(null); break;
       case 'prio':
         F.priority = Number(el.dataset.p);
         $$('.prio button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.p) === F.priority)));
@@ -1004,6 +1157,32 @@
     }
   });
 
+  // tras reservar, apuntarse a medias, marcar comprado o cambiar mi parte: datos frescos y misma pantalla
+  async function afterGiftChange(id, msg, reopen) {
+    const r = route();
+    S.home = null;
+    try {
+      const jobs = [api.gifts(S.session.token)];
+      if (r.view === 'list') jobs.push(api.items(S.session.token, r.owner));
+      const [g, l] = await Promise.all(jobs);
+      S.gifts = g.items || []; if (g.budget != null) S.budget = Number(g.budget);
+      if (l) S.items[r.owner] = l.items || [];
+    } catch (err) { handleErr(err); }
+    closeSheet();
+    if (msg) toast(msg);
+    render();
+    if (reopen && findItem(id)) openDetail(id);
+  }
+
+  async function saveBudget(amount) {
+    try {
+      await api.setBudget(S.session.token, amount);
+      S.budget = amount; S.editBudget = false;
+      toast(amount ? 'Presupuesto guardado' : 'Presupuesto quitado');
+      renderGifts();
+    } catch (err) { handleErr(err); }
+  }
+
   async function savePhoto(photo) {
     try {
       await api.setPhoto(S.session.token, photo);
@@ -1021,6 +1200,21 @@
     const showErr = (msg) => { const p = $('.error-msg', form); if (p) p.textContent = msg; };
     // errores del PIN: se repinta la pantalla con el aviso y se agita la casilla afectada
     const pinErr = (msg, shake = 'pin') => { S.auth.error = msg; renderAuth(); shakePins(shake); };
+    if (kind === 'budget') {
+      const raw = $('#f-budget').value.trim();
+      if (!raw) return saveBudget(null);
+      const v = parsePrice(raw);
+      if (!v) { toast('Escribe una cantidad, por ejemplo 100'); return; }
+      return saveBudget(v);
+    }
+    if (kind === 'amount') {
+      const raw = $('#f-amount').value.trim();
+      const v = raw ? parsePrice(raw) : null;
+      if (raw && v == null) { toast('Escribe una cantidad, por ejemplo 50'); return; }
+      try { await api.setAmount(S.session.token, form.dataset.id, v); await afterGiftChange(form.dataset.id, 'Tu parte guardada', true); }
+      catch (err) { handleErr(err); }
+      return;
+    }
     if (kind === 'code') {
       const code = $('#f-code').value.trim();
       if (!code) return showErr('Escribe el código de la familia.');
@@ -1071,7 +1265,11 @@
       else if (e.key === 'Backspace') { e.preventDefault(); pinPress('del'); }
     }
   });
-  window.addEventListener('hashchange', () => { closeSheet(); F = null; window.scrollTo({ top: 0 }); render(); });
+  window.addEventListener('hashchange', () => {
+    closeSheet(); F = null; S.editBudget = false; window.scrollTo({ top: 0 });
+    const r = route(); if (r.view !== 'list' || r.owner !== S.viewing) S.viewing = null;
+    render();
+  });
   // al volver a la app (cambio de pestaña), refrescar datos para ver lo que han hecho los demás
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.session && !sheetRoot.innerHTML) { S.home = null; refreshCurrent(); } });
 
