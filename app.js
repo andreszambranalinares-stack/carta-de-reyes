@@ -64,6 +64,13 @@
     return `<span class="avatar${photo ? ' has-photo' : ''}${ring ? ' ring' : ''}" style="--s:${size}px;--c:var(--m${(m && m.color) || 0})" aria-hidden="true">${photo ? `<img src="${h(photo)}" alt="">` : h(initial(m && m.name))}${badge ? `<span class="badge">${h(badge)}</span>` : ''}</span>`;
   };
   const isIdea = (it) => it && it.kind === 'idea';
+  // cambio de precio reciente (lo detecta la revisión automática; se enseña 14 días)
+  const priceMove = (it) => {
+    if (!it || it.price_prev == null || !it.price_changed_at || it.price == null) return null;
+    if (Date.now() - new Date(it.price_changed_at).getTime() > 14 * 864e5) return null;
+    const d = Number(it.price) - Number(it.price_prev);
+    return d ? { down: d < 0, diff: Math.abs(d), prev: Number(it.price_prev) } : null;
+  };
   // una idea no tiene foto: se dibuja una tarjeta con la estrella y «Sorpréndeme»
   const priceText = (it) => isIdea(it) ? (it.price ? `Hasta ${eur(it.price)}` : 'Sin límite') : eur(it.price);
   const imgHtml = (it, color = 1) => isIdea(it)
@@ -884,7 +891,7 @@
     return `
       <button class="card ${taken ? 'taken' : ''}${it.discarded ? ' discarded' : ''}" data-act="item" data-id="${h(it.id)}" data-owner="${h(it.owner_id)}">
         ${tag}${!owner.mine && it.reserved_by_me && unreadChat(it) ? `<span class="msg-dot" aria-label="Mensajes nuevos">${I.chat}</span>` : ''}
-        <div class="img">${imgHtml(it, owner.color)}${isNew ? '<span class="tag-new">Nuevo</span>' : ''}</div>
+        <div class="img">${imgHtml(it, owner.color)}${isNew ? '<span class="tag-new">Nuevo</span>' : ''}${(() => { const pm = priceMove(it); return pm ? `<span class="price-move ${pm.down ? 'down' : 'up'}">${pm.down ? '↓' : '↑'} ${h(eur(pm.diff))}</span>` : ''; })()}</div>
         <div class="body">
           <span class="title">${h(it.title)}</span>
           <span class="foot"><span class="price">${opts.giftsView && open ? `${h(eur(myCost(it)))}<small>tu parte de ${h(eur(it.price) || '—')}</small>` : (isIdea(it) ? `<small>${it.price ? 'hasta' : 'precio'}</small>${h(it.price ? eur(it.price) : 'libre')}` : h(eur(it.price)))}</span>${stars(it.priority)}</span>
@@ -1154,7 +1161,7 @@
         <div class="stack" style="gap:8px">
           <p class="eyebrow">${[isIdea(it) ? 'Idea · Sorpréndeme' : '', it.category ? h(it.category) : ''].filter(Boolean).join(' · ')}</p>
           <h2>${h(it.title)}</h2>
-          <div class="meta-row">${it.price || isIdea(it) ? `<span class="big-price">${h(priceText(it))}</span>` : ''}<span>${stars(it.priority)} ${h(PRIO[it.priority])}</span></div>
+          <div class="meta-row">${it.price || isIdea(it) ? `<span class="big-price">${h(priceText(it))}</span>` : ''}${(() => { const pm = priceMove(it); return pm ? `<span class="price-was ${pm.down ? 'down' : 'up'}">Antes <s>${h(eur(pm.prev))}</s> · ${pm.down ? 'ha bajado' : 'ha subido'}</span>` : ''; })()}<span>${stars(it.priority)} ${h(PRIO[it.priority])}</span></div>
           ${isIdea(it) ? `<p class="secret-note">${I.spark}<span>${mine ? 'Es una idea: quien te lo regale elegirá el modelo concreto.' : `${h(owner.name)} deja que elijas tú. Cualquier cosa que encaje con la idea vale.`}</span></p>` : ''}
         </div>
         ${it.notes ? `<div class="notes">${h(it.notes)}</div>` : ''}
@@ -1917,7 +1924,7 @@
     });
   })();
 
-  const APP_VERSION = 14;
+  const APP_VERSION = 15;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });

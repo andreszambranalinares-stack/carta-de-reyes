@@ -676,3 +676,14 @@ html { overscroll-behavior-y: none; }
 .push-card .grow { display: grid; gap: 6px; min-width: 0; }
 .push-card .grow > span { color: var(--muted); font-size: .92rem; }
 .steps { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 10px; line-height: 1.45; }
+
+/* ---------- cambios de precio ---------- */
+.price-move {
+  position: absolute; right: 8px; bottom: 8px; z-index: 2; padding: 3px 9px; border-radius: 999px;
+  font-size: .76rem; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff;
+}
+.price-move.down { background: var(--ok); }
+.price-move.up { background: var(--danger); }
+.price-was { font-size: .86rem; }
+.price-was.down { color: #7fd39b; }
+.price-was.up { color: var(--danger); }
