@@ -1278,7 +1278,61 @@
 
   function refreshCurrent() { render(); }
 
-  const APP_VERSION = 6;
+  // ---------------------------------------------------------------- gestos móviles
+  // deslizar una hoja hacia abajo (desde arriba del todo) la cierra
+  (() => {
+    let y0 = null, dy = 0, sheet = null;
+    document.addEventListener('touchstart', (e) => {
+      sheet = e.target.closest('.sheet');
+      if (!sheet || sheet.scrollTop > 0 || e.target.closest('input, textarea, .keypad')) { sheet = null; return; }
+      y0 = e.touches[0].clientY; dy = 0;
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!sheet || y0 == null) return;
+      dy = e.touches[0].clientY - y0;
+      if (dy > 0 && sheet.scrollTop <= 0) { sheet.classList.add('dragging'); sheet.style.transform = `translateY(${dy}px)`; }
+    }, { passive: true });
+    document.addEventListener('touchend', () => {
+      if (!sheet || y0 == null) return;
+      const s = sheet; sheet = null; y0 = null;
+      s.classList.remove('dragging');
+      if (dy > 110) { closeSheet(); F = null; return; }
+      s.classList.add('snap'); s.style.transform = '';
+      setTimeout(() => s.classList.remove('snap'), 250);
+    });
+  })();
+
+  // tirar hacia abajo para actualizar (solo con la app abierta desde la pantalla de inicio,
+  // porque en el navegador ya lo hace Safari/Chrome)
+  (() => {
+    const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+    if (!standalone) return;
+    const ptr = document.createElement('div');
+    ptr.id = 'ptr'; ptr.setAttribute('aria-hidden', 'true'); ptr.innerHTML = '<img src="img/estrella.png" alt="">';
+    document.body.appendChild(ptr);
+    let y0 = null, dy = 0, busy = false;
+    const show = (d) => { const p = Math.min(1, d / 90); ptr.style.opacity = p; ptr.style.transform = `translateY(${Math.min(d, 90) - 70}px)`; ptr.firstChild.style.transform = `rotate(${d * 3}deg)`; };
+    const hide = () => { ptr.style.transition = 'transform .25s, opacity .25s'; ptr.style.transform = 'translateY(-70px)'; ptr.style.opacity = 0; setTimeout(() => { ptr.style.transition = ''; }, 260); };
+    document.addEventListener('touchstart', (e) => {
+      y0 = (!busy && S.session && !sheetRoot.innerHTML && window.scrollY <= 0 && !e.target.closest('.chips')) ? e.touches[0].clientY : null; dy = 0;
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => { if (y0 == null) return; dy = e.touches[0].clientY - y0; if (dy > 0) show(dy); }, { passive: true });
+    document.addEventListener('touchend', async () => {
+      if (y0 == null) return; y0 = null;
+      if (dy < 90) { hide(); return; }
+      busy = true; ptr.classList.add('loading');
+      S.home = null; S.gifts = null;
+      const r = route();
+      try {
+        if (r.view === 'list') S.items[r.owner] = (await api.items(S.session.token, r.owner)).items || [];
+        await checkUpdate();
+      } catch { /* render() avisará */ }
+      render();
+      ptr.classList.remove('loading'); hide(); busy = false;
+    });
+  })();
+
+  const APP_VERSION = 7;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
