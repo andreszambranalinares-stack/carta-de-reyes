@@ -1482,7 +1482,7 @@
     });
   })();
 
-  const APP_VERSION = 9;
+  const APP_VERSION = 10;
   async function checkUpdate() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });

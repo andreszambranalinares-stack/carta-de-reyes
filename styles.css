@@ -340,7 +340,7 @@ button.hero-card { cursor: pointer; }
 }
 .fab svg { width: 30px; height: 30px; }
 .fab span { max-width: 64px; }
-@media (min-width: 480px) { .fab { right: calc((100vw - 480px) / 2 + 14px); } }
+@media (min-width: 480px) and (max-width: 699px) { .fab { right: calc((100vw - 480px) / 2 + 14px); } }
 
 /* ---------- hojas / diálogos ---------- */
 .sheet-backdrop {
@@ -495,7 +495,7 @@ button.hero-card { cursor: pointer; }
 /* ---------- solo móvil: tacto, gestos y columna de teléfono ---------- */
 button, a, .card, .chip { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 html { overscroll-behavior-y: none; }
-@media (min-width: 480px) { html { background: #050a1e; } body { background: transparent; } #app { background: var(--bg); min-height: 100dvh; box-shadow: 0 0 60px rgba(0,0,0,.5); } }
+@media (min-width: 480px) and (max-width: 699px) { html { background: #050a1e; } body { background: transparent; } #app { background: var(--bg); min-height: 100dvh; box-shadow: 0 0 60px rgba(0,0,0,.5); } }
 .sheet .grabber { width: 48px; height: 5px; margin-bottom: 12px; cursor: grab; }
 .sheet.dragging { transition: none; animation: none; }
 .sheet.snap { transition: transform .22s cubic-bezier(.2, .8, .2, 1); }
@@ -543,3 +543,56 @@ html { overscroll-behavior-y: none; }
 .kind-toggle button b { color: var(--fg); font-size: .95rem; }
 .kind-toggle button small { font-size: .76rem; }
 .kind-toggle button[aria-checked="true"] { border-color: var(--gold); background: var(--gold-soft); color: var(--gold); }
+
+/* ---------- iPad: vertical (≥700 px) y horizontal (≥1000 px) ---------- */
+@media (min-width: 700px) {
+  #app { max-width: 1100px; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); }
+  .scene { height: 290px; margin-left: calc(max(28px, env(safe-area-inset-left, 0px)) * -1); margin-right: calc(max(28px, env(safe-area-inset-right, 0px)) * -1); }
+  .scene .kings { width: min(42%, 420px); }
+  .scene .big-star { width: 60px; top: calc(env(safe-area-inset-top, 0px) + 92px); }
+  .chips { margin-left: calc(max(28px, env(safe-area-inset-left, 0px)) * -1); margin-right: calc(max(28px, env(safe-area-inset-right, 0px)) * -1);
+    padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); }
+  .auth { max-width: 520px; }
+  .topbar { min-height: 76px; }
+  .brand img { width: 52px; }
+  .brand .display { font-size: 2.4rem; }
+  .hero-card { min-height: 170px; padding: 24px 28px; gap: 24px; }
+  .hero-card .display { font-size: 2.8rem; }
+  .hero-card .kings { width: 40%; max-width: 360px; }
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .family-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .note-card { margin-right: 0; max-width: 620px; }
+  .two { grid-template-columns: 1fr 1fr; }
+  .fab { right: calc(max(28px, (100vw - 1100px) / 2 + 28px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); width: 104px; height: 104px; }
+  /* hojas como ventana centrada, al estilo de iPadOS */
+  .sheet-backdrop { align-items: center; padding: 32px; }
+  .sheet { max-width: 600px; border-radius: var(--r-lg); border-bottom: 1px solid var(--line); padding: 16px 28px 28px; max-height: 88dvh; }
+  .who-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .keypad button { min-height: 70px; }
+  #toast { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+}
+@media (min-width: 1000px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+  .family-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+  /* detalle de un deseo en dos columnas: foto a la izquierda, datos a la derecha */
+  .sheet:has(.detail) { max-width: 920px; }
+  .detail { grid-template-columns: 1fr 1fr; align-items: start; column-gap: 28px; }
+  .detail > .detail-img { grid-row: 1 / span 4; aspect-ratio: 1; max-height: 70dvh; position: sticky; top: 0; }
+  .detail > :not(.detail-img) { grid-column: 2; }
+}
+/* iPad en horizontal: poca altura, escena más baja */
+@media (min-width: 1000px) and (max-height: 860px) {
+  .scene { height: 230px; }
+  .auth-face { margin-top: -84px; }
+}
+/* iPad en horizontal: el teclado del PIN a la derecha para que todo quepa sin bajar */
+@media (min-width: 1000px) and (max-height: 860px) {
+  form.auth[data-form="login"], form.auth[data-form="register"] {
+    max-width: 940px; grid-template-columns: 1fr 1fr; column-gap: 56px; align-items: start;
+  }
+  form.auth[data-form="login"] > *, form.auth[data-form="register"] > * { grid-column: 1; }
+  form.auth[data-form="login"] > .keypad, form.auth[data-form="register"] > .keypad { grid-column: 2; grid-row: 1 / span 8; align-self: center; margin-top: 24px; }
+  form.auth .keypad button { min-height: 76px; }
+  .auth-face .avatar { --s: 120px !important; width: 120px; height: 120px; }
+}
+@media (min-width: 1000px) and (max-height: 860px) { .scene .big-star { display: none; } }
